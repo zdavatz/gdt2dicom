@@ -17,10 +17,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let iter = parse_file(args.gdt_file).unwrap();
-
-    for line in iter {
-        dbg!(line);
-    }
+    let file = parse_file(args.gdt_file).unwrap();
+    dbg!(file);
     println!("Finished");
 }
