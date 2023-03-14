@@ -1,8 +1,10 @@
 use clap::Parser;
 
 pub mod gdt;
+pub mod dcm_xml;
 
 use crate::gdt::{ parse_file };
+use crate::dcm_xml::{ file_to_xml };
 
 /// Convert a gdt file and an image folder to a dicom file
 #[derive(Parser, Debug)]
@@ -18,6 +20,8 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let file = parse_file(args.gdt_file).unwrap();
-    dbg!(file);
+    dbg!(&file);
+    let xml = file_to_xml(file);
+    println!("{}", xml);
     println!("Finished");
 }
