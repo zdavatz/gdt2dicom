@@ -3,8 +3,7 @@ use std::str::FromStr;
 
 pub fn file_to_xml(file: GdtFile) -> String {
     return format!(
-        r#"
-<?xml version="1.0" encoding="UTF-8"?>
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <file-format>
 <meta-header xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
 <element tag="0002,0000" vr="UL" vm="1" len="4" name="FileMetaInformationGroupLength">0</element>
@@ -25,8 +24,8 @@ pub fn file_to_xml(file: GdtFile) -> String {
 <element tag="0010,0020" vr="LO" vm="0" len="0" name="PatientID">{patient_id}</element>
 <element tag="0010,0030" vr="DA" vm="0" len="0" name="PatientBirthDate">{patient_dob}</element>
 <element tag="0010,0040" vr="CS" vm="0" len="0" name="PatientSex">{patient_sex}</element>
-<element tag="0010,1020" vr="CS" vm="0" len="0" name="PatientSize">{patient_size}</element>
-<element tag="0010,1030" vr="CS" vm="0" len="0" name="PatientWeight">{patient_weight}</element>
+<element tag="0010,1020" vr="DS" vm="0" len="0" name="PatientSize">{patient_size}</element>
+<element tag="0010,1030" vr="DS" vm="0" len="0" name="PatientWeight">{patient_weight}</element>
 <element tag="0020,0010" vr="SH" vm="0" len="0" name="StudyID"></element>
 <element tag="0020,0011" vr="IS" vm="0" len="0" name="SeriesNumber"></element>
 <element tag="0020,0013" vr="IS" vm="0" len="0" name="InstanceNumber"></element>
