@@ -4,6 +4,7 @@ Convert a gdt file and an image folder to a dicom file
 
 ## Build
 
+Install `dcmtk`, that will give you `img2dcm`
 Install Rust: https://www.rust-lang.org/tools/install
 
 ```
