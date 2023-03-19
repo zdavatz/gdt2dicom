@@ -6,10 +6,10 @@ use tempfile::NamedTempFile;
 use xml::attribute::OwnedAttribute;
 use xml::name::OwnedName;
 use xml::reader::EventReader;
-use xml::writer::EventWriter;
 use xml::reader::XmlEvent;
+use xml::writer::EventWriter;
 
-use crate::gdt::{ GdtBasicDiagnosticsObject, GdtFile, GdtPatientGender, GdtPatientObject };
+use crate::gdt::{GdtBasicDiagnosticsObject, GdtFile, GdtPatientGender, GdtPatientObject};
 
 #[derive(Debug)]
 pub enum DcmError {
@@ -21,7 +21,10 @@ pub enum DcmError {
 pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
     let file = File::open(path).map_err(DcmError::IoError)?;
     let reader = EventReader::new(file);
-    let mut events: Vec<XmlEvent> = reader.into_iter().collect::<Result<Vec<_>,xml::reader::Error>>().map_err(DcmError::XmlReaderError)?;
+    let mut events: Vec<XmlEvent> = reader
+        .into_iter()
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
+        .map_err(DcmError::XmlReaderError)?;
     add_meta_header_if_not_exist(&mut events);
     return Ok(events);
 }
@@ -32,33 +35,41 @@ pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, DcmErr
     let mut writer = EventWriter::new(&temp_file);
     for e in events {
         match e.as_writer_event() {
-            Some(e)=> writer.write(e).map_err(DcmError::XmlWriterError)?,
-            _=> (), // events like EndDocument are ignored
+            Some(e) => writer.write(e).map_err(DcmError::XmlWriterError)?,
+            _ => (), // events like EndDocument are ignored
         };
-    };
+    }
     return Ok(temp_file);
 }
 
-fn xml_contains(xml_events: &Vec<XmlEvent>, tag: String, name: String)-> bool {
-    xml_events.iter().any(|ev| {
-        match ev {
-            XmlEvent::StartElement { name: xml::name::OwnedName { local_name, .. }, attributes, .. }
-                if local_name.as_str() == "element" && attributes_contain(attributes, tag.clone(), name.clone()) => {
-                    true
-                }
-            _ => false,
+fn xml_contains(xml_events: &Vec<XmlEvent>, tag: String, name: String) -> bool {
+    xml_events.iter().any(|ev| match ev {
+        XmlEvent::StartElement {
+            name: xml::name::OwnedName { local_name, .. },
+            attributes,
+            ..
+        } if local_name.as_str() == "element"
+            && attributes_contain(attributes, tag.clone(), name.clone()) =>
+        {
+            true
         }
+        _ => false,
     })
 }
 
-fn value_of_attribute(attrs: &Vec<OwnedAttribute>, name: String)-> Option<String> {
-    attrs.iter().find_map(|OwnedAttribute { name: xml::name::OwnedName { local_name, .. }, value }| {
-        if *local_name == name {
-            Some(value.clone())
-        } else {
-            None
-        }
-    })
+fn value_of_attribute(attrs: &Vec<OwnedAttribute>, name: String) -> Option<String> {
+    attrs.iter().find_map(
+        |OwnedAttribute {
+             name: xml::name::OwnedName { local_name, .. },
+             value,
+         }| {
+            if *local_name == name {
+                Some(value.clone())
+            } else {
+                None
+            }
+        },
+    )
 }
 
 pub struct DcmElement {
@@ -72,10 +83,15 @@ fn add_element_if_not_exist(events: &mut Vec<XmlEvent>, element: DcmElement) {
     if xml_contains(events, element.tag.clone(), element.name.clone()) {
         return;
     }
-    let end_data_set_index = events.iter().position(|e| match e {
-        XmlEvent::EndElement { name: OwnedName { local_name, .. } } if local_name.as_str() == "data-set" => true,
-        _ => false,
-    }).unwrap_or(events.len() - 2);
+    let end_data_set_index = events
+        .iter()
+        .position(|e| match e {
+            XmlEvent::EndElement {
+                name: OwnedName { local_name, .. },
+            } if local_name.as_str() == "data-set" => true,
+            _ => false,
+        })
+        .unwrap_or(events.len() - 2);
     let start = XmlEvent::StartElement {
         name: OwnedName {
             local_name: "element".to_string(),
@@ -140,7 +156,7 @@ fn add_element_if_not_exist(events: &mut Vec<XmlEvent>, element: DcmElement) {
     events.insert(end_data_set_index + 2, end);
 }
 
-fn attributes_contain(attrs: &Vec<OwnedAttribute>, tag: String, name: String)-> bool {
+fn attributes_contain(attrs: &Vec<OwnedAttribute>, tag: String, name: String) -> bool {
     let xml_tag = value_of_attribute(attrs, "tag".to_string());
     let xml_name = value_of_attribute(attrs, "name".to_string());
     return xml_tag == Some(tag) && xml_name == Some(name);
@@ -148,16 +164,25 @@ fn attributes_contain(attrs: &Vec<OwnedAttribute>, tag: String, name: String)-> 
 
 fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
     let has_meta_header = events.iter().any(|e| match e {
-        XmlEvent::StartElement { name: OwnedName { local_name , .. }, .. } if local_name.as_str() == "meta-header" => true,
+        XmlEvent::StartElement {
+            name: OwnedName { local_name, .. },
+            ..
+        } if local_name.as_str() == "meta-header" => true,
         _ => false,
     });
     if has_meta_header {
         return;
     }
-    let open_data_set_index = events.iter().position(|e| match e {
-        XmlEvent::StartElement { name: OwnedName { local_name, ..}, ..} if local_name.as_str() == "data-set" => true,
-        _ => false,
-    }).unwrap_or(2);
+    let open_data_set_index = events
+        .iter()
+        .position(|e| match e {
+            XmlEvent::StartElement {
+                name: OwnedName { local_name, .. },
+                ..
+            } if local_name.as_str() == "data-set" => true,
+            _ => false,
+        })
+        .unwrap_or(2);
     let xml = r#"
     <meta-header xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
     <element tag="0002,0000" vr="UL" vm="1" len="4" name="FileMetaInformationGroupLength">0</element>
@@ -171,15 +196,18 @@ fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
     let new_events: Vec<XmlEvent> = reader
         .into_iter()
         .filter(|e| match e {
-            Ok(XmlEvent::StartDocument {..}) | Ok(XmlEvent::EndDocument) => false,
+            Ok(XmlEvent::StartDocument { .. }) | Ok(XmlEvent::EndDocument) => false,
             _ => true,
         })
-        .collect::<Result<Vec<_>,xml::reader::Error>>()
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
         .unwrap();
-    events.splice((open_data_set_index - 1)..(open_data_set_index - 1), new_events);
+    events.splice(
+        (open_data_set_index - 1)..(open_data_set_index - 1),
+        new_events,
+    );
 }
 
-pub fn default_dcm_xml()-> Vec<XmlEvent> {
+pub fn default_dcm_xml() -> Vec<XmlEvent> {
     let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <file-format>
 <data-set xfer="1.2.840.10008.1.2.4.50" name="JPEG Baseline">
@@ -199,54 +227,73 @@ pub fn default_dcm_xml()-> Vec<XmlEvent> {
     let mut events: Vec<XmlEvent> = reader
         .into_iter()
         .filter(|e| match e {
-            Ok(XmlEvent::StartDocument {..}) | Ok(XmlEvent::EndDocument) => false,
+            Ok(XmlEvent::StartDocument { .. }) | Ok(XmlEvent::EndDocument) => false,
             _ => true,
         })
-        .collect::<Result<Vec<_>,xml::reader::Error>>()
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
         .unwrap();
     add_meta_header_if_not_exist(&mut events);
     return events;
 }
 
-pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) ->  Result<NamedTempFile, DcmError> {
+pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
     let mut cloned = xml_events.clone();
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,0010".to_string(),
-        vr: "PN".to_string(),
-        name: "PatientName".to_string(),
-        body: gdt_get_patient_name(&file.object_patient),
-    });
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,0010".to_string(),
+            vr: "PN".to_string(),
+            name: "PatientName".to_string(),
+            body: gdt_get_patient_name(&file.object_patient),
+        },
+    );
 
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,0020".to_string(),
-        vr: "LO".to_string(),
-        name: "PatientID".to_string(),
-        body: file.object_patient.patient_number,
-    });
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,0030".to_string(),
-        vr: "DA".to_string(),
-        name: "PatientBirthDate".to_string(),
-        body: gdt_date_to_dcm(file.object_patient.patient_dob),
-    });
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,0040".to_string(),
-        vr: "CS".to_string(),
-        name: "PatientSex".to_string(),
-        body: gdt_gender_to_dcm(&file.object_patient.patient_gender),
-    });
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,1020".to_string(),
-        vr: "DS".to_string(),
-        name: "PatientSize".to_string(),
-        body: gdt_get_patient_height_in_meters(&file.object_basic_diagnostics).unwrap_or("".to_string()),
-    });
-    add_element_if_not_exist(&mut cloned, DcmElement {
-        tag: "0010,1030".to_string(),
-        vr: "DS".to_string(),
-        name: "PatientWeight".to_string(),
-        body: file.object_basic_diagnostics.patient_weight,
-    });
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,0020".to_string(),
+            vr: "LO".to_string(),
+            name: "PatientID".to_string(),
+            body: file.object_patient.patient_number,
+        },
+    );
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,0030".to_string(),
+            vr: "DA".to_string(),
+            name: "PatientBirthDate".to_string(),
+            body: gdt_date_to_dcm(file.object_patient.patient_dob),
+        },
+    );
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,0040".to_string(),
+            vr: "CS".to_string(),
+            name: "PatientSex".to_string(),
+            body: gdt_gender_to_dcm(&file.object_patient.patient_gender),
+        },
+    );
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,1020".to_string(),
+            vr: "DS".to_string(),
+            name: "PatientSize".to_string(),
+            body: gdt_get_patient_height_in_meters(&file.object_basic_diagnostics)
+                .unwrap_or("".to_string()),
+        },
+    );
+    add_element_if_not_exist(
+        &mut cloned,
+        DcmElement {
+            tag: "0010,1030".to_string(),
+            vr: "DS".to_string(),
+            name: "PatientWeight".to_string(),
+            body: file.object_basic_diagnostics.patient_weight,
+        },
+    );
     return xml_events_to_file(cloned);
 }
 
