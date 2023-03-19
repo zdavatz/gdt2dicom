@@ -18,3 +18,6 @@ You can run the binary like this:
 ```
 ./target/debug/gdt2dicom --gdt-file <GDT_FILE> --jpegs <FOLDER CONTAINING JPEGS> --output <OUTPUT DCM PATH>
 ```
+
+By default it searches for a xml file for Dicom in the jpegs folder (#5),
+if it cannot find one it uses a default file. You can also specify the xml file with the `-d` or `--dicom-xml` flag.
