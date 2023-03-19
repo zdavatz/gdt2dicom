@@ -14,9 +14,15 @@ jobs:
           pwd
           ls
           cd ${{ github.workspace }}
-          cargo build
-
+          cargo build --release
       - name: Check format
         run: |
           cd ${{ github.workspace }}
           rustfmt --check src/*.rs
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifact
+          path: |
+            ./target/release/gdt2dicom
+          retention-days: 5
