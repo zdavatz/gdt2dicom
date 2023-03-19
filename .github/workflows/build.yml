@@ -1,0 +1,22 @@
+name: Build
+on:
+  - push
+  - pull_request
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Build
+        run: |
+          pwd
+          ls
+          cd ${{ github.workspace }}
+          cargo build
+
+      - name: Check format
+        run: |
+          cd ${{ github.workspace }}
+          rustfmt --check src/*.rs
