@@ -1,10 +1,12 @@
 name: Build
 on:
-  - push
-  - pull_request
+  push:
+    branches:
+      - '*'
+  pull_request:
 
 jobs:
-  build:
+  build-ubuntu:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
@@ -20,7 +22,45 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
-          name: artifact
+          name: Linux artifact
+          path: |
+            ./target/release/gdt2dicom
+          retention-days: 5
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Build
+        run: |
+          cd ${{ github.workspace }}
+          cargo build --release
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v3
+        with:
+          name: Windows artifact
+          path: |
+            .\target\release\gdt2dicom.exe
+          retention-days: 5
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Build
+        run: |
+          cd ${{ github.workspace }}
+          cargo build --release
+      - name: Check format
+        run: |
+          cd ${{ github.workspace }}
+          rustfmt --check src/*.rs
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v3
+        with:
+          name: Mac Artifact
           path: |
             ./target/release/gdt2dicom
           retention-days: 5
