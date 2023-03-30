@@ -15,11 +15,13 @@ jobs:
           cd ${{ github.workspace }}
           cargo build --release
           tar -czvf gdt2dicom-linux.tar.gz ./target/release/gdt2dicom
+          tar -czvf dicom2gdt-linux.tar.gz ./target/release/dicom2gdt
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifacts: |
             gdt2dicom-linux.tar.gz
+            dicom2gdt-linux.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -37,6 +39,7 @@ jobs:
           allowUpdates: true
           artifacts: |
             .\target\release\gdt2dicom.exe
+            .\target\release\dicom2gdt.exe
 
   build-mac:
     runs-on: macos-latest
@@ -50,8 +53,10 @@ jobs:
           cd ${{ github.workspace }}
           cargo build --release
           tar -czvf gdt2dicom-mac.tar.gz ./target/release/gdt2dicom
+          tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifacts: |
             gdt2dicom-mac.tar.gz
+            dicom2gdt-mac.tar.gz
