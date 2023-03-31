@@ -2,15 +2,9 @@ use clap::Parser;
 
 // use std::ffi::OsStr;
 // use std::fs::read_dir;
-// use std::io::Write;
 use std::path::{PathBuf};
-// use std::process::Command;
 
-// pub mod dcm_xml;
-// pub mod gdt;
-
-// use crate::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml};
-// use crate::gdt::parse_file;
+use gdt2dicom::dcm_xml::{DcmError, parse_dcm_as_xml, export_images_from_dcm};
 
 /// Convert a gdt file and an image folder to a dicom file
 #[derive(Parser, Debug)]
@@ -20,18 +14,21 @@ struct Args {
     gdt_file: PathBuf,
 
     #[arg(short, long)]
-    dicom: PathBuf,
+    dicom_file: PathBuf,
 
     #[arg(short, long)]
-    jpegs: PathBuf,
-
-    #[arg(short, long)]
-    output: PathBuf,
+    jpegs: Option<PathBuf>,
 }
 
 fn main() -> Result<(), std::io::Error> {
-
     let args = Args::parse();
-    dbg!(args);
+    dbg!(&args);
+    if let Some(jpegs_path) = args.jpegs {
+        println!("Exporting images to {}", &jpegs_path.display());
+        export_images_from_dcm(&args.dicom_file, &jpegs_path);
+        println!("Exported images");
+    }
+    let events = parse_dcm_as_xml(&args.dicom_file);
+    dbg!(events);
     return Ok(());
 }

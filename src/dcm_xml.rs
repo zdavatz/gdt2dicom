@@ -1,5 +1,7 @@
 use std::fs::File;
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 
 use tempfile::NamedTempFile;
@@ -27,6 +29,31 @@ pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
         .map_err(DcmError::XmlReaderError)?;
     add_meta_header_if_not_exist(&mut events);
     return Ok(events);
+}
+
+pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
+    let output = Command::new("dcm2xml").arg(path).output().map_err(DcmError::IoError)?;
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let reader = EventReader::new(output.stdout.as_slice());
+    let events: Vec<XmlEvent> = reader
+        .into_iter()
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
+        .map_err(DcmError::XmlReaderError)?;
+    return Ok(events);
+}
+
+pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), DcmError> {
+    // dcmj2pnm --write-png /Users/b123400/Downloads/0002.DCM  ./output --all-frames
+    let output = Command::new("dcmj2pnm")
+        .arg("--write-png")
+        .arg(dcm_path)
+        .arg(output_path)
+        .arg("--all-frames")
+        .output()
+        .map_err(DcmError::IoError)?;
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    std::io::stdout().write_all(&output.stdout).unwrap();
+    return Ok(());
 }
 
 pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
