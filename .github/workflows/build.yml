@@ -18,7 +18,7 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/*.rs
+          rustfmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -58,7 +58,7 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/*.rs
+          rustfmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:

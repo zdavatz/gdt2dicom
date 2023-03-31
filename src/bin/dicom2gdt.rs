@@ -2,9 +2,9 @@ use clap::Parser;
 
 // use std::ffi::OsStr;
 // use std::fs::read_dir;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
-use gdt2dicom::dcm_xml::{DcmError, parse_dcm_as_xml, export_images_from_dcm};
+use gdt2dicom::dcm_xml::{export_images_from_dcm, parse_dcm_as_xml, DcmError};
 
 /// Convert a gdt file and an image folder to a dicom file
 #[derive(Parser, Debug)]

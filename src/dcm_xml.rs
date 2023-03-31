@@ -32,7 +32,10 @@ pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
 }
 
 pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
-    let output = Command::new("dcm2xml").arg(path).output().map_err(DcmError::IoError)?;
+    let output = Command::new("dcm2xml")
+        .arg(path)
+        .output()
+        .map_err(DcmError::IoError)?;
     std::io::stderr().write_all(&output.stderr).unwrap();
     let reader = EventReader::new(output.stdout.as_slice());
     let events: Vec<XmlEvent> = reader
