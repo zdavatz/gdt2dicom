@@ -5,6 +5,13 @@ use std::io::BufReader;
 use std::path::Path;
 use std::result::Result;
 use std::str::FromStr;
+use xml::reader::XmlEvent;
+
+use crate::dcm_xml::{
+    xml_get_patient_birth_date, xml_get_patient_height_meter, xml_get_patient_name,
+    xml_get_patient_patient_id, xml_get_patient_sex, xml_get_patient_weight_kg, xml_get_study_date,
+    xml_get_study_time,
+};
 
 #[derive(Debug, Default)]
 pub struct GdtFile {
@@ -30,7 +37,7 @@ pub struct GdtFile {
 
 #[derive(Debug, Default)]
 pub struct GdtRequestObject {
-    date_of_examination: String, // 6200, MMDDYYYY
+    date_of_examination: String, // 6200, DDMMYYYY
     time_of_examination: String, // 6201, e.g. 110435
     request_identifier: String,  // 8310
     request_uid: String,         // 8314
@@ -72,7 +79,7 @@ pub struct GdtPatientObject {
     pub patient_number: String,           // 3000
     pub patient_name: String,             // 3101
     pub patient_first_name: String,       // 3102
-    pub patient_dob: String,              // 3103, MMDDYYYY
+    pub patient_dob: String,              // 3103, DDMMYYYY
     pub patient_gender: GdtPatientGender, // 3110
 }
 
@@ -384,3 +391,58 @@ fn read_basic_diagnostics_object(
     }
     return Ok(obj);
 }
+
+fn dcm_date_to_gdt(str: String) -> String {
+    // YYYYMMDD -> DDMMYYYY
+    let year = &str[0..4];
+    let month = &str[4..6];
+    let day = &str[6..8];
+    return format!("{}{}{}", day, month, year);
+}
+
+fn dcm_gender_to_gdt(gender_str: String) -> Option<GdtPatientGender> {
+    if gender_str == "M".to_string() {
+        return Some(GdtPatientGender::Male);
+    } else if gender_str == "F".to_string() {
+        return Some(GdtPatientGender::Female);
+    }
+    return None;
+}
+
+pub fn dcm_xml_to_file(events: &Vec<XmlEvent>) -> GdtFile {
+    let mut file: GdtFile = Default::default();
+    file.object_header_data.version_gdt = "03.00".to_string();
+
+    if let Some(date) = xml_get_study_date(&events) {
+        file.object_request.date_of_examination = dcm_date_to_gdt(date);
+    }
+    if let Some(time) = xml_get_study_time(&events) {
+        file.object_request.time_of_examination = time;
+    }
+
+    if let Some(id) = xml_get_patient_patient_id(&events) {
+        file.object_patient.patient_number = id;
+    }
+
+    if let Some(name) = xml_get_patient_name(&events) {
+        file.object_patient.patient_name = name;
+    }
+
+    if let Some(birth_date) = xml_get_patient_birth_date(&events) {
+        file.object_patient.patient_dob = dcm_date_to_gdt(birth_date);
+    }
+    if let Some(g) = xml_get_patient_sex(&events).and_then(|x| dcm_gender_to_gdt(x)) {
+        file.object_patient.patient_gender = g;
+    }
+    if let Some(weight_kg) = xml_get_patient_weight_kg(&events) {
+        file.object_basic_diagnostics.patient_weight = weight_kg;
+    }
+    if let Some(height_meter) = xml_get_patient_height_meter(&events) {
+        if let Ok(num) = f64::from_str(&height_meter) {
+            file.object_basic_diagnostics.patient_height = format!("{}", num * 100.0);
+        }
+    }
+    return file;
+}
+
+// pub fn file_to_string(file: GdtFile) -> String {}
