@@ -446,16 +446,42 @@ pub fn dcm_xml_to_file(events: &Vec<XmlEvent>) -> GdtFile {
 }
 
 pub fn file_to_string(file: GdtFile) -> String {
-    let header = "01380006301\r\n";
-    // TODO 01681000000292 -> record length
-    let header_obj = obj_header_to_string(file.object_header_data);
-    let patient = obj_patient_to_string(file.object_patient);
-    let basic_diagnostics = obj_basic_diagnostics_request_to_string(file.object_basic_diagnostics);
-    let request = obj_gdt_request_to_string(file.object_request);
-    return request; // TODO
+    let header = "01380006301\r\n".to_string();
+    let (header_lines, header_obj) = obj_header_to_string(file.object_header_data);
+    let (patient_lines, patient) = obj_patient_to_string(file.object_patient);
+    let (basic_diagnostics_lines, basic_diagnostics) =
+        obj_basic_diagnostics_request_to_string(file.object_basic_diagnostics);
+    let (request_lines, request) = obj_gdt_request_to_string(file.object_request);
+
+    let total_lines = 1 /* 8000 header */
+        + 1 /* 8100 record length */
+        + header_lines
+        + patient_lines
+        + basic_diagnostics_lines
+        + request_lines
+        + 1 /* 8202 end of record */;
+    let end_of_record = line_body_to_gdt_string(format!("8202{}", total_lines));
+
+    let total_length = header.len()
+        + 16 /* 8100 record length */
+        + header_obj.len()
+        + patient.len()
+        + basic_diagnostics.len()
+        + request.len()
+        + end_of_record.len();
+    let record_length = line_body_to_gdt_string(format!("8100{:07}", total_length));
+
+    let output = header
+        + &record_length
+        + &header_obj
+        + &patient
+        + &basic_diagnostics
+        + &request
+        + &end_of_record;
+    return output;
 }
 
-fn obj_header_to_string(obj: GdtHeaderDataObject) -> String {
+fn obj_header_to_string(obj: GdtHeaderDataObject) -> (usize, String) {
     let mut lines = Vec::new();
     if obj.gdt_id_receiver.len() > 0 {
         lines.push(format!("8315{}", obj.gdt_id_receiver));
@@ -467,7 +493,7 @@ fn obj_header_to_string(obj: GdtHeaderDataObject) -> String {
     return obj_and_lines_to_gdt_string("Obj_Kopfdaten", lines);
 }
 
-fn obj_patient_to_string(obj: GdtPatientObject) -> String {
+fn obj_patient_to_string(obj: GdtPatientObject) -> (usize, String) {
     let mut lines = Vec::new();
     if obj.patient_number.len() > 0 {
         lines.push(format!("3000{}", obj.patient_number));
@@ -491,7 +517,7 @@ fn obj_patient_to_string(obj: GdtPatientObject) -> String {
     return obj_and_lines_to_gdt_string("Obj_Patient", lines);
 }
 
-fn obj_gdt_request_to_string(obj: GdtRequestObject) -> String {
+fn obj_gdt_request_to_string(obj: GdtRequestObject) -> (usize, String) {
     let mut lines = Vec::new();
     if obj.date_of_examination.len() > 0 {
         lines.push(format!("6200{}", obj.date_of_examination));
@@ -508,7 +534,7 @@ fn obj_gdt_request_to_string(obj: GdtRequestObject) -> String {
     return obj_and_lines_to_gdt_string("Obj_Anforderung", lines);
 }
 
-fn obj_basic_diagnostics_request_to_string(obj: GdtBasicDiagnosticsObject) -> String {
+fn obj_basic_diagnostics_request_to_string(obj: GdtBasicDiagnosticsObject) -> (usize, String) {
     let mut lines = Vec::new();
     if obj.patient_height.len() > 0 {
         lines.push(format!("3622{}", obj.patient_height));
@@ -523,13 +549,13 @@ fn line_body_to_gdt_string(line: String) -> String {
     return format!("{:03}{}\r\n", line.len() + 5, line);
 }
 
-fn obj_and_lines_to_gdt_string(obj_name: &str, lines: Vec<String>) -> String {
+fn obj_and_lines_to_gdt_string(obj_name: &str, lines: Vec<String>) -> (usize, String) {
     let mut string = line_body_to_gdt_string(format!("8200{}", obj_name));
     let mut num_field = 1;
-    for line in lines {
-        string += &line_body_to_gdt_string(line);
+    for line in &lines {
+        string += &line_body_to_gdt_string(line.clone());
         num_field += 1;
     }
     string += &line_body_to_gdt_string(format!("8201{}", num_field + 1));
-    return string;
+    return (&lines.len() + 2, string);
 }
