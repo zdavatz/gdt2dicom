@@ -5,6 +5,13 @@ use std::io::BufReader;
 use std::path::Path;
 use std::result::Result;
 use std::str::FromStr;
+use xml::reader::XmlEvent;
+
+use crate::dcm_xml::{
+    xml_get_patient_birth_date, xml_get_patient_height_meter, xml_get_patient_name,
+    xml_get_patient_patient_id, xml_get_patient_sex, xml_get_patient_weight_kg, xml_get_study_date,
+    xml_get_study_time,
+};
 
 #[derive(Debug, Default)]
 pub struct GdtFile {
@@ -30,7 +37,7 @@ pub struct GdtFile {
 
 #[derive(Debug, Default)]
 pub struct GdtRequestObject {
-    date_of_examination: String, // 6200, MMDDYYYY
+    date_of_examination: String, // 6200, DDMMYYYY
     time_of_examination: String, // 6201, e.g. 110435
     request_identifier: String,  // 8310
     request_uid: String,         // 8314
@@ -72,7 +79,7 @@ pub struct GdtPatientObject {
     pub patient_number: String,           // 3000
     pub patient_name: String,             // 3101
     pub patient_first_name: String,       // 3102
-    pub patient_dob: String,              // 3103, MMDDYYYY
+    pub patient_dob: String,              // 3103, DDMMYYYY
     pub patient_gender: GdtPatientGender, // 3110
 }
 
@@ -383,4 +390,172 @@ fn read_basic_diagnostics_object(
         }
     }
     return Ok(obj);
+}
+
+fn dcm_date_to_gdt(str: String) -> String {
+    // YYYYMMDD -> DDMMYYYY
+    let year = &str[0..4];
+    let month = &str[4..6];
+    let day = &str[6..8];
+    return format!("{}{}{}", day, month, year);
+}
+
+fn dcm_gender_to_gdt(gender_str: String) -> Option<GdtPatientGender> {
+    if gender_str == "M".to_string() {
+        return Some(GdtPatientGender::Male);
+    } else if gender_str == "F".to_string() {
+        return Some(GdtPatientGender::Female);
+    }
+    return None;
+}
+
+pub fn dcm_xml_to_file(events: &Vec<XmlEvent>) -> GdtFile {
+    let mut file: GdtFile = Default::default();
+    file.object_header_data.version_gdt = "03.00".to_string();
+
+    if let Some(date) = xml_get_study_date(&events) {
+        file.object_request.date_of_examination = dcm_date_to_gdt(date);
+    }
+    if let Some(time) = xml_get_study_time(&events) {
+        file.object_request.time_of_examination = time;
+    }
+
+    if let Some(id) = xml_get_patient_patient_id(&events) {
+        file.object_patient.patient_number = id;
+    }
+
+    if let Some(name) = xml_get_patient_name(&events) {
+        file.object_patient.patient_name = name;
+    }
+
+    if let Some(birth_date) = xml_get_patient_birth_date(&events) {
+        file.object_patient.patient_dob = dcm_date_to_gdt(birth_date);
+    }
+    if let Some(g) = xml_get_patient_sex(&events).and_then(|x| dcm_gender_to_gdt(x)) {
+        file.object_patient.patient_gender = g;
+    }
+    if let Some(weight_kg) = xml_get_patient_weight_kg(&events) {
+        file.object_basic_diagnostics.patient_weight = weight_kg;
+    }
+    if let Some(height_meter) = xml_get_patient_height_meter(&events) {
+        if let Ok(num) = f64::from_str(&height_meter) {
+            file.object_basic_diagnostics.patient_height = format!("{}", num * 100.0);
+        }
+    }
+    return file;
+}
+
+pub fn file_to_string(file: GdtFile) -> String {
+    let header = "01380006301\r\n".to_string();
+    let (header_lines, header_obj) = obj_header_to_string(file.object_header_data);
+    let (patient_lines, patient) = obj_patient_to_string(file.object_patient);
+    let (basic_diagnostics_lines, basic_diagnostics) =
+        obj_basic_diagnostics_request_to_string(file.object_basic_diagnostics);
+    let (request_lines, request) = obj_gdt_request_to_string(file.object_request);
+
+    let total_lines = 1 /* 8000 header */
+        + 1 /* 8100 record length */
+        + header_lines
+        + patient_lines
+        + basic_diagnostics_lines
+        + request_lines
+        + 1 /* 8202 end of record */;
+    let end_of_record = line_body_to_gdt_string(format!("8202{}", total_lines));
+
+    let total_length = header.len()
+        + 16 /* 8100 record length */
+        + header_obj.len()
+        + patient.len()
+        + basic_diagnostics.len()
+        + request.len()
+        + end_of_record.len();
+    let record_length = line_body_to_gdt_string(format!("8100{:07}", total_length));
+
+    let output = header
+        + &record_length
+        + &header_obj
+        + &patient
+        + &basic_diagnostics
+        + &request
+        + &end_of_record;
+    return output;
+}
+
+fn obj_header_to_string(obj: GdtHeaderDataObject) -> (usize, String) {
+    let mut lines = Vec::new();
+    if obj.gdt_id_receiver.len() > 0 {
+        lines.push(format!("8315{}", obj.gdt_id_receiver));
+    }
+    if obj.gdt_id_sender.len() > 0 {
+        lines.push(format!("8316{}", obj.gdt_id_sender));
+    }
+    lines.push("921803.00".to_string());
+    return obj_and_lines_to_gdt_string("Obj_Kopfdaten", lines);
+}
+
+fn obj_patient_to_string(obj: GdtPatientObject) -> (usize, String) {
+    let mut lines = Vec::new();
+    if obj.patient_number.len() > 0 {
+        lines.push(format!("3000{}", obj.patient_number));
+    }
+    if obj.patient_name.len() > 0 {
+        lines.push(format!("3101{}", obj.patient_name));
+    }
+    if obj.patient_first_name.len() > 0 {
+        lines.push(format!("3102{}", obj.patient_first_name));
+    }
+    if obj.patient_dob.len() > 0 {
+        lines.push(format!("3102{}", obj.patient_dob));
+    }
+    lines.push(format!(
+        "3110{}",
+        match obj.patient_gender {
+            GdtPatientGender::Male => "1",
+            GdtPatientGender::Female => "2",
+        }
+    ));
+    return obj_and_lines_to_gdt_string("Obj_Patient", lines);
+}
+
+fn obj_gdt_request_to_string(obj: GdtRequestObject) -> (usize, String) {
+    let mut lines = Vec::new();
+    if obj.date_of_examination.len() > 0 {
+        lines.push(format!("6200{}", obj.date_of_examination));
+    }
+    if obj.time_of_examination.len() > 0 {
+        lines.push(format!("6201{}", obj.time_of_examination));
+    }
+    if obj.request_identifier.len() > 0 {
+        lines.push(format!("8310{}", obj.request_identifier));
+    }
+    if obj.request_uid.len() > 0 {
+        lines.push(format!("8314{}", obj.request_uid));
+    }
+    return obj_and_lines_to_gdt_string("Obj_Anforderung", lines);
+}
+
+fn obj_basic_diagnostics_request_to_string(obj: GdtBasicDiagnosticsObject) -> (usize, String) {
+    let mut lines = Vec::new();
+    if obj.patient_height.len() > 0 {
+        lines.push(format!("3622{}", obj.patient_height));
+    }
+    if obj.patient_weight.len() > 0 {
+        lines.push(format!("3623{}", obj.patient_weight));
+    }
+    return obj_and_lines_to_gdt_string("Obj_Basisdiagnostik", lines);
+}
+
+fn line_body_to_gdt_string(line: String) -> String {
+    return format!("{:03}{}\r\n", line.len() + 5, line);
+}
+
+fn obj_and_lines_to_gdt_string(obj_name: &str, lines: Vec<String>) -> (usize, String) {
+    let mut string = line_body_to_gdt_string(format!("8200{}", obj_name));
+    let mut num_field = 1;
+    for line in &lines {
+        string += &line_body_to_gdt_string(line.clone());
+        num_field += 1;
+    }
+    string += &line_body_to_gdt_string(format!("8201{}", num_field + 1));
+    return (&lines.len() + 2, string);
 }

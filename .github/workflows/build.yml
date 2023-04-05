@@ -18,13 +18,14 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/*.rs
+          rustfmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
           name: Linux artifact
           path: |
             ./target/release/gdt2dicom
+            ./target/release/dicom2gdt
           retention-days: 5
 
   build-windows:
@@ -42,6 +43,7 @@ jobs:
           name: Windows artifact
           path: |
             .\target\release\gdt2dicom.exe
+            .\target\release\dicom2gdt.exe
           retention-days: 5
 
   build-mac:
@@ -56,11 +58,12 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/*.rs
+          rustfmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
           name: Mac Artifact
           path: |
             ./target/release/gdt2dicom
+            ./target/release/dicom2gdt
           retention-days: 5

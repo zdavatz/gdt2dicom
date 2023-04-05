@@ -6,11 +6,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub mod dcm_xml;
-pub mod gdt;
-
-use crate::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml};
-use crate::gdt::parse_file;
+use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml};
+use gdt2dicom::gdt::parse_file;
 
 /// Convert a gdt file and an image folder to a dicom file
 #[derive(Parser, Debug)]

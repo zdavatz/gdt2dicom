@@ -1,5 +1,7 @@
 use std::fs::File;
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 
 use tempfile::NamedTempFile;
@@ -29,9 +31,35 @@ pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
     return Ok(events);
 }
 
+pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
+    let output = Command::new("dcm2xml")
+        .arg(path)
+        .output()
+        .map_err(DcmError::IoError)?;
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let reader = EventReader::new(output.stdout.as_slice());
+    let events: Vec<XmlEvent> = reader
+        .into_iter()
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
+        .map_err(DcmError::XmlReaderError)?;
+    return Ok(events);
+}
+
+pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), DcmError> {
+    let output = Command::new("dcmj2pnm")
+        .arg("--write-png")
+        .arg(dcm_path)
+        .arg(output_path)
+        .arg("--all-frames")
+        .output()
+        .map_err(DcmError::IoError)?;
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    std::io::stdout().write_all(&output.stdout).unwrap();
+    return Ok(());
+}
+
 pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
     let temp_file = NamedTempFile::new().map_err(DcmError::IoError)?;
-    // std::fs::write(&temp_file, xml)?;
     let mut writer = EventWriter::new(&temp_file);
     for e in events {
         match e.as_writer_event() {
@@ -57,7 +85,7 @@ fn xml_contains(xml_events: &Vec<XmlEvent>, tag: String, name: String) -> bool {
     })
 }
 
-fn value_of_attribute(attrs: &Vec<OwnedAttribute>, name: String) -> Option<String> {
+fn value_of_attribute(attrs: &Vec<OwnedAttribute>, name: &str) -> Option<String> {
     attrs.iter().find_map(
         |OwnedAttribute {
              name: xml::name::OwnedName { local_name, .. },
@@ -157,8 +185,8 @@ fn add_element_if_not_exist(events: &mut Vec<XmlEvent>, element: DcmElement) {
 }
 
 fn attributes_contain(attrs: &Vec<OwnedAttribute>, tag: String, name: String) -> bool {
-    let xml_tag = value_of_attribute(attrs, "tag".to_string());
-    let xml_name = value_of_attribute(attrs, "name".to_string());
+    let xml_tag = value_of_attribute(attrs, "tag");
+    let xml_name = value_of_attribute(attrs, "name");
     return xml_tag == Some(tag) && xml_name == Some(name);
 }
 
@@ -300,8 +328,8 @@ pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) -> Result<NamedTem
 fn gdt_date_to_dcm(str: String) -> String {
     // DDMMYYYY -> YYYYMMDD
     let day = &str[0..2];
-    let year = &str[4..8];
     let month = &str[2..4];
+    let year = &str[4..8];
     return format!("{}{}{}", year, month, day);
 }
 
@@ -325,4 +353,92 @@ fn gdt_get_patient_name(patient: &GdtPatientObject) -> String {
 fn gdt_get_patient_height_in_meters(patient: &GdtBasicDiagnosticsObject) -> Option<String> {
     let num = f64::from_str(&patient.patient_height).ok()?;
     return Some(format!("{}", num / 100.0));
+}
+
+fn xml_get_element_body(
+    events: &Vec<XmlEvent>,
+    in_name: Option<String>,
+    in_tag: Option<String>,
+) -> Option<String> {
+    let start_tag_index = events.iter().position(|e| match e {
+        XmlEvent::StartElement {
+            name: OwnedName { local_name, .. },
+            attributes,
+            ..
+        } if local_name.as_str() == "element"
+            && value_of_attribute(&attributes, "name") == in_name
+            && value_of_attribute(&attributes, "tag") == in_tag =>
+        {
+            true
+        }
+        _ => false,
+    })?;
+    let XmlEvent::Characters(result) = &events[start_tag_index + 1] else {
+        return None;
+    };
+    return Some(result.clone());
+}
+
+pub fn xml_get_patient_name(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientName".to_string()),
+        Some("0010,0010".to_string()),
+    );
+}
+
+pub fn xml_get_patient_height_meter(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientSize".to_string()),
+        Some("0010,1020".to_string()),
+    );
+}
+
+pub fn xml_get_patient_weight_kg(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientWeight".to_string()),
+        Some("0010,1030".to_string()),
+    );
+}
+
+pub fn xml_get_patient_patient_id(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientID".to_string()),
+        Some("0010,0020".to_string()),
+    );
+}
+
+pub fn xml_get_patient_birth_date(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientBirthDate".to_string()),
+        Some("0010,0030".to_string()),
+    );
+}
+
+pub fn xml_get_patient_sex(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("PatientSex".to_string()),
+        Some("0010,0040".to_string()),
+    );
+}
+
+pub fn xml_get_study_date(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("StudyDate".to_string()),
+        Some("0008,0020".to_string()),
+    );
+}
+
+pub fn xml_get_study_time(events: &Vec<XmlEvent>) -> Option<String> {
+    return xml_get_element_body(
+        &events,
+        Some("StudyTime".to_string()),
+        Some("0008,0030".to_string()),
+    );
 }
