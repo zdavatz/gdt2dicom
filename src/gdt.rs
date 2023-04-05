@@ -445,4 +445,91 @@ pub fn dcm_xml_to_file(events: &Vec<XmlEvent>) -> GdtFile {
     return file;
 }
 
-// pub fn file_to_string(file: GdtFile) -> String {}
+pub fn file_to_string(file: GdtFile) -> String {
+    let header = "01380006301\r\n";
+    // TODO 01681000000292 -> record length
+    let header_obj = obj_header_to_string(file.object_header_data);
+    let patient = obj_patient_to_string(file.object_patient);
+    let basic_diagnostics = obj_basic_diagnostics_request_to_string(file.object_basic_diagnostics);
+    let request = obj_gdt_request_to_string(file.object_request);
+    return request; // TODO
+}
+
+fn obj_header_to_string(obj: GdtHeaderDataObject) -> String {
+    let mut lines = Vec::new();
+    if obj.gdt_id_receiver.len() > 0 {
+        lines.push(format!("8315{}", obj.gdt_id_receiver));
+    }
+    if obj.gdt_id_sender.len() > 0 {
+        lines.push(format!("8316{}", obj.gdt_id_sender));
+    }
+    lines.push("921803.00".to_string());
+    return obj_and_lines_to_gdt_string("Obj_Kopfdaten", lines);
+}
+
+fn obj_patient_to_string(obj: GdtPatientObject) -> String {
+    let mut lines = Vec::new();
+    if obj.patient_number.len() > 0 {
+        lines.push(format!("3000{}", obj.patient_number));
+    }
+    if obj.patient_name.len() > 0 {
+        lines.push(format!("3101{}", obj.patient_name));
+    }
+    if obj.patient_first_name.len() > 0 {
+        lines.push(format!("3102{}", obj.patient_first_name));
+    }
+    if obj.patient_dob.len() > 0 {
+        lines.push(format!("3102{}", obj.patient_dob));
+    }
+    lines.push(format!(
+        "3110{}",
+        match obj.patient_gender {
+            GdtPatientGender::Male => "1",
+            GdtPatientGender::Female => "2",
+        }
+    ));
+    return obj_and_lines_to_gdt_string("Obj_Patient", lines);
+}
+
+fn obj_gdt_request_to_string(obj: GdtRequestObject) -> String {
+    let mut lines = Vec::new();
+    if obj.date_of_examination.len() > 0 {
+        lines.push(format!("6200{}", obj.date_of_examination));
+    }
+    if obj.time_of_examination.len() > 0 {
+        lines.push(format!("6201{}", obj.time_of_examination));
+    }
+    if obj.request_identifier.len() > 0 {
+        lines.push(format!("8310{}", obj.request_identifier));
+    }
+    if obj.request_uid.len() > 0 {
+        lines.push(format!("8314{}", obj.request_uid));
+    }
+    return obj_and_lines_to_gdt_string("Obj_Anforderung", lines);
+}
+
+fn obj_basic_diagnostics_request_to_string(obj: GdtBasicDiagnosticsObject) -> String {
+    let mut lines = Vec::new();
+    if obj.patient_height.len() > 0 {
+        lines.push(format!("3622{}", obj.patient_height));
+    }
+    if obj.patient_weight.len() > 0 {
+        lines.push(format!("3623{}", obj.patient_weight));
+    }
+    return obj_and_lines_to_gdt_string("Obj_Basisdiagnostik", lines);
+}
+
+fn line_body_to_gdt_string(line: String) -> String {
+    return format!("{:03}{}\r\n", line.len() + 5, line);
+}
+
+fn obj_and_lines_to_gdt_string(obj_name: &str, lines: Vec<String>) -> String {
+    let mut string = line_body_to_gdt_string(format!("8200{}", obj_name));
+    let mut num_field = 1;
+    for line in lines {
+        string += &line_body_to_gdt_string(line);
+        num_field += 1;
+    }
+    string += &line_body_to_gdt_string(format!("8201{}", num_field + 1));
+    return string;
+}
