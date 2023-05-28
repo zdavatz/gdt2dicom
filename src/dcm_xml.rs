@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use xml::reader::EventReader;
 use xml::reader::XmlEvent;
 use xml::writer::EventWriter;
 
+use crate::command::exec_command;
 use crate::gdt::{GdtBasicDiagnosticsObject, GdtFile, GdtPatientGender, GdtPatientObject};
 
 #[derive(Debug)]
@@ -46,15 +48,17 @@ pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
 }
 
 pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), DcmError> {
-    let output = Command::new("dcmj2pnm")
-        .arg("--write-png")
-        .arg(dcm_path)
-        .arg(output_path)
-        .arg("--all-frames")
-        .output()
-        .map_err(DcmError::IoError)?;
-    std::io::stderr().write_all(&output.stderr).unwrap();
-    std::io::stdout().write_all(&output.stdout).unwrap();
+    exec_command(
+        "dcmj2pnm",
+        vec![
+            OsStr::new("--write-png"),
+            dcm_path.as_os_str(),
+            output_path.as_os_str(),
+            OsStr::new("--all-frames"),
+        ],
+        true,
+    )
+    .map_err(DcmError::IoError)?;
     return Ok(());
 }
 

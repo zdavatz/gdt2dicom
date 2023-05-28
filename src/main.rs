@@ -2,10 +2,10 @@ use clap::Parser;
 
 use std::ffi::OsStr;
 use std::fs::read_dir;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
+use gdt2dicom::command::exec_command;
+use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml};
 use gdt2dicom::gdt::parse_file;
 
@@ -20,7 +20,7 @@ struct Args {
     dicom_xml: Option<PathBuf>,
 
     #[arg(short, long)]
-    jpegs: PathBuf,
+    jpegs: Option<PathBuf>,
 
     #[arg(short, long)]
     output: PathBuf,
@@ -28,9 +28,13 @@ struct Args {
 
 fn main() -> Result<(), std::io::Error> {
     let args = Args::parse();
-    let jpegs = list_jpeg_files(&args.jpegs)?;
+    let jpegs = match args.jpegs {
+        Some(ref j) => list_jpeg_files(&j)?,
+        None => vec![],
+    };
     println!(
-        "Found Jpeg files: \n{}",
+        "Found {} Jpeg files: \n{}",
+        jpegs.len(),
         jpegs
             .iter()
             .map(|s| s.as_path().display().to_string())
@@ -38,12 +42,13 @@ fn main() -> Result<(), std::io::Error> {
             .join("\n")
     );
 
-    let dicom_xml_path = match args.dicom_xml {
-        Some(p) => Some(PathBuf::from(p)),
-        None => find_xml_path(&args.jpegs)?,
+    let dicom_xml_path = match (args.dicom_xml, args.jpegs) {
+        (Some(p), _) => Some(PathBuf::from(p)),
+        (None, Some(ref j)) => find_xml_path(&j)?,
+        _ => None,
     };
     println!(
-        "Dicom XML file path: \n{}",
+        "Dicom XML file path: {}",
         dicom_xml_path
             .clone()
             .and_then(|p| p.into_os_string().into_string().ok())
@@ -58,25 +63,22 @@ fn main() -> Result<(), std::io::Error> {
     let gdt_file = parse_file(args.gdt_file).unwrap();
     let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
 
-    let mut command_args = vec![
-        OsStr::new("-nsc"),
-        OsStr::new("-dx"),
-        temp_file.path().as_os_str(),
-    ];
-    command_args.extend(jpegs.iter().map(|x| OsStr::new(x)));
-    command_args.push(OsStr::new(&args.output));
-
-    println!(
-        "Running: img2dcm {}",
-        command_args
-            .iter()
-            .map(|s| s.to_str().unwrap())
-            .collect::<Vec<&str>>()
-            .join(" ")
-    );
-    let output = Command::new("img2dcm").args(command_args).output()?;
-    std::io::stdout().write_all(&output.stdout).unwrap();
-    std::io::stderr().write_all(&output.stderr).unwrap();
+    if args.output.extension() == Some("wl".as_ref()) {
+        println!("Output extension is 'wl', exporting Worklist file");
+        if jpegs.len() > 0 {
+            println!("{} Jpeg files will be ignored", jpegs.len());
+        }
+        dcm_xml_to_worklist(&temp_file.path(), &args.output)?;
+    } else {
+        let mut command_args = vec![
+            OsStr::new("-nsc"),
+            OsStr::new("-dx"),
+            temp_file.path().as_os_str(),
+        ];
+        command_args.extend(jpegs.iter().map(|x| OsStr::new(x)));
+        command_args.push(OsStr::new(&args.output));
+        exec_command("img2dcm", command_args, true)?;
+    }
 
     println!("Finished");
     return Ok(());
