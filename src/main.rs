@@ -68,6 +68,7 @@ fn main() -> Result<(), std::io::Error> {
         if jpegs.len() > 0 {
             println!("{} Jpeg files will be ignored", jpegs.len());
         }
+        dcm_xml_to_worklist(&temp_file.path(), &args.output)?;
     } else {
         let mut command_args = vec![
             OsStr::new("-nsc"),
