@@ -40,5 +40,5 @@ You can convert Dicom 2 GDT as well.
 You can convert a GDT file to a Worklist file doing
 
 ```
-gdt2dicom --gdt-file epat.get --output epat.wl
+gdt2dicom --gdt-file epat.gdt --output epat.wl
 ```
