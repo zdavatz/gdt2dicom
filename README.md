@@ -34,3 +34,11 @@ You can convert Dicom 2 GDT as well.
 
 - `--gdt-file` or `-g` is optional, when it's not present, it will be outputed to stdout.
 - `--jpegs` or `-j` is optional, when it's not present, images will not be exported.
+
+### GDT zu Worklist file
+
+You can convert a GDT file to a Worklist file doing
+
+```
+gdt2dicom --gdt-file epat.get --output epat.wl
+```
