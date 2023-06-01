@@ -4,7 +4,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
+use std::time::SystemTime;
 
+use chrono::{DateTime, Utc};
 use tempfile::NamedTempFile;
 use xml::attribute::OwnedAttribute;
 use xml::name::OwnedName;
@@ -240,7 +242,9 @@ fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
 }
 
 pub fn default_dcm_xml() -> Vec<XmlEvent> {
-    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+    let curr_time = SystemTime::now();
+    let dt: DateTime<Utc> = curr_time.clone().into();
+    let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <file-format>
 <data-set xfer="1.2.840.10008.1.2.4.50" name="JPEG Baseline">
 <element tag="0008,0016" vr="UI" vm="1" len="28" name="SOPClassUID">1.2.840.10008.5.1.4.1.1.7.2</element>
@@ -252,9 +256,15 @@ pub fn default_dcm_xml() -> Vec<XmlEvent> {
 <element tag="0020,0010" vr="SH" vm="0" len="0" name="StudyID"></element>
 <element tag="0020,0011" vr="IS" vm="0" len="0" name="SeriesNumber"></element>
 <element tag="0020,0013" vr="IS" vm="0" len="0" name="InstanceNumber"></element>
+<sequence tag="0040,0100" vr="SQ" card="1" len="24" name="ScheduledProcedureStepSequence">
+<item card="1" len="16">
+<element tag="0040,0002" vr="DA" vm="1" len="8" name="ScheduledProcedureStepStartDate">{}</element>
+</item>
+</sequence>
 </data-set>
 </file-format>
-    "#;
+    "#, dt.format("%Y%m%d"));
+
     let reader = EventReader::new(xml.as_bytes());
     let mut events: Vec<XmlEvent> = reader
         .into_iter()
