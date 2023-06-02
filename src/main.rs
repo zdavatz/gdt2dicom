@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use gdt2dicom::command::exec_command;
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
-use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml};
+use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmTransferType};
 use gdt2dicom::gdt::parse_file;
 
 /// Convert a gdt file and an image folder to a dicom file
@@ -54,16 +54,20 @@ fn main() -> Result<(), std::io::Error> {
             .and_then(|p| p.into_os_string().into_string().ok())
             .unwrap_or("None".to_string())
     );
-
+    let is_output_worklist = args.output.extension() == Some("wl".as_ref());
     let xml_events = match dicom_xml_path {
         Some(p) => parse_dcm_xml(&p).expect("Expecting a good xml file."),
-        _ => default_dcm_xml(),
+        _ => default_dcm_xml(if is_output_worklist {
+            DcmTransferType::LittleEndianExplicit
+        } else {
+            DcmTransferType::JPEGBaseline
+        }),
     };
 
     let gdt_file = parse_file(args.gdt_file).unwrap();
     let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
 
-    if args.output.extension() == Some("wl".as_ref()) {
+    if is_output_worklist {
         println!("Output extension is 'wl', exporting Worklist file");
         if jpegs.len() > 0 {
             println!("{} Jpeg files will be ignored", jpegs.len());
