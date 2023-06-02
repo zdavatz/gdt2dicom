@@ -312,7 +312,6 @@ pub fn default_dcm_worklist_xml_str() -> String {
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <file-format>
 <data-set xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
-<element tag="0008,0018" vr="UI" vm="1" len="50" name="SOPInstanceUID"></element>
 <element tag="0008,0020" vr="DA" vm="0" len="0" name="StudyDate"></element>
 <element tag="0008,0030" vr="TM" vm="0" len="0" name="StudyTime"></element>
 <element tag="0008,0050" vr="SH" vm="0" len="0" name="AccessionNumber"></element>
