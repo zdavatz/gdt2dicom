@@ -31,7 +31,7 @@ pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
         .into_iter()
         .collect::<Result<Vec<_>, xml::reader::Error>>()
         .map_err(DcmError::XmlReaderError)?;
-    add_meta_header_if_not_exist(&mut events);
+    add_meta_header_if_not_exist(DcmTransferType::JPEGBaseline, &mut events);
     return Ok(events);
 }
 
@@ -196,7 +196,7 @@ fn attributes_contain(attrs: &Vec<OwnedAttribute>, tag: String, name: String) ->
     return xml_tag == Some(tag) && xml_name == Some(name);
 }
 
-fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
+fn add_meta_header_if_not_exist(transfer_type: DcmTransferType, events: &mut Vec<XmlEvent>) {
     let has_meta_header = events.iter().any(|e| match e {
         XmlEvent::StartElement {
             name: OwnedName { local_name, .. },
@@ -217,15 +217,24 @@ fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
             _ => false,
         })
         .unwrap_or(2);
-    let xml = r#"
+    let extra_elements = match transfer_type {
+        DcmTransferType::JPEGBaseline => {
+            r#"<element tag="0002,0002" vr="UI" vm="1" len="28" name="MediaStorageSOPClassUID">1.2.840.10008.5.1.4.1.1.7.2</element>"#
+        }
+        DcmTransferType::LittleEndianExplicit => "",
+    };
+    let xml = format!(
+        r#"
     <meta-header xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
+    {extra_elements}
     <element tag="0002,0000" vr="UL" vm="1" len="4" name="FileMetaInformationGroupLength">0</element>
-    <element tag="0002,0002" vr="UI" vm="1" len="28" name="MediaStorageSOPClassUID">1.2.840.10008.5.1.4.1.1.7.2</element>
     <element tag="0002,0003" vr="UI" vm="1" len="50" name="MediaStorageSOPInstanceUID"></element>
     <element tag="0002,0010" vr="UI" vm="1" len="22" name="TransferSyntaxUID"></element>
     <element tag="0002,0012" vr="UI" vm="1" len="28" name="ImplementationClassUID"></element>
     <element tag="0002,0013" vr="SH" vm="1" len="16" name="ImplementationVersionName"></element>
-    </meta-header>"#;
+    </meta-header>"#,
+        extra_elements = extra_elements
+    );
     let reader = EventReader::new(xml.as_bytes());
     let new_events: Vec<XmlEvent> = reader
         .into_iter()
@@ -241,10 +250,35 @@ fn add_meta_header_if_not_exist(events: &mut Vec<XmlEvent>) {
     );
 }
 
-pub fn default_dcm_xml() -> Vec<XmlEvent> {
+#[derive(Debug)]
+pub enum DcmTransferType {
+    JPEGBaseline,
+    LittleEndianExplicit,
+}
+
+pub fn default_dcm_xml(transfer_type: DcmTransferType) -> Vec<XmlEvent> {
+    let xml = match transfer_type {
+        DcmTransferType::JPEGBaseline => default_dcm_xml_str(),
+        DcmTransferType::LittleEndianExplicit => default_dcm_worklist_xml_str(),
+    };
+    let reader = EventReader::new(xml.as_bytes());
+    let mut events: Vec<XmlEvent> = reader
+        .into_iter()
+        .filter(|e| match e {
+            Ok(XmlEvent::StartDocument { .. }) | Ok(XmlEvent::EndDocument) => false,
+            _ => true,
+        })
+        .collect::<Result<Vec<_>, xml::reader::Error>>()
+        .unwrap();
+    add_meta_header_if_not_exist(transfer_type, &mut events);
+    return events;
+}
+
+pub fn default_dcm_xml_str() -> String {
     let curr_time = SystemTime::now();
     let dt: DateTime<Utc> = curr_time.clone().into();
-    let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <file-format>
 <data-set xfer="1.2.840.10008.1.2.4.50" name="JPEG Baseline">
 <element tag="0008,0016" vr="UI" vm="1" len="28" name="SOPClassUID">1.2.840.10008.5.1.4.1.1.7.2</element>
@@ -258,24 +292,48 @@ pub fn default_dcm_xml() -> Vec<XmlEvent> {
 <element tag="0020,0013" vr="IS" vm="0" len="0" name="InstanceNumber"></element>
 <sequence tag="0040,0100" vr="SQ" card="1" len="24" name="ScheduledProcedureStepSequence">
 <item card="1" len="16">
-<element tag="0040,0002" vr="DA" vm="1" len="8" name="ScheduledProcedureStepStartDate">{}</element>
+<element tag="0040,0002" vr="DA" vm="1" len="8" name="ScheduledProcedureStepStartDate">{today}</element>
+<element tag="0040,0003" vr="TM" vm="1" len="6" name="ScheduledProcedureStepStartTime">{current_time}</element>
 </item>
 </sequence>
 </data-set>
 </file-format>
-    "#, dt.format("%Y%m%d"));
+    "#,
+        today = dt.format("%Y%m%d"),
+        current_time = dt.format("%H%M%S")
+    );
+    return xml;
+}
 
-    let reader = EventReader::new(xml.as_bytes());
-    let mut events: Vec<XmlEvent> = reader
-        .into_iter()
-        .filter(|e| match e {
-            Ok(XmlEvent::StartDocument { .. }) | Ok(XmlEvent::EndDocument) => false,
-            _ => true,
-        })
-        .collect::<Result<Vec<_>, xml::reader::Error>>()
-        .unwrap();
-    add_meta_header_if_not_exist(&mut events);
-    return events;
+pub fn default_dcm_worklist_xml_str() -> String {
+    let curr_time = SystemTime::now();
+    let dt: DateTime<Utc> = curr_time.clone().into();
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<file-format>
+<data-set xfer="1.2.840.10008.1.2.1" name="Little Endian Explicit">
+<element tag="0008,0018" vr="UI" vm="1" len="50" name="SOPInstanceUID"></element>
+<element tag="0008,0020" vr="DA" vm="0" len="0" name="StudyDate"></element>
+<element tag="0008,0030" vr="TM" vm="0" len="0" name="StudyTime"></element>
+<element tag="0008,0050" vr="SH" vm="0" len="0" name="AccessionNumber"></element>
+<element tag="0008,0090" vr="PN" vm="0" len="0" name="ReferringPhysicianName"></element>
+<element tag="0020,000d" vr="UI" vm="1" len="26" name="StudyInstanceUID">1.2.276.0.7230010.3.2.109</element>
+<element tag="0020,0010" vr="SH" vm="0" len="0" name="StudyID"></element>
+<element tag="0020,0011" vr="IS" vm="0" len="0" name="SeriesNumber"></element>
+<element tag="0020,0013" vr="IS" vm="0" len="0" name="InstanceNumber"></element>
+<sequence tag="0040,0100" vr="SQ" card="1" len="24" name="ScheduledProcedureStepSequence">
+<item card="1" len="16">
+<element tag="0040,0002" vr="DA" vm="1" len="8" name="ScheduledProcedureStepStartDate">{today}</element>
+<element tag="0040,0003" vr="TM" vm="1" len="6" name="ScheduledProcedureStepStartTime">{current_time}</element>
+</item>
+</sequence>
+</data-set>
+</file-format>
+    "#,
+        today = dt.format("%Y%m%d"),
+        current_time = dt.format("%H%M%S")
+    );
+    return xml;
 }
 
 pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
