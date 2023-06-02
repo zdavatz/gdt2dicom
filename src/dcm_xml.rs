@@ -356,11 +356,15 @@ fn gdt_gender_to_dcm(gender: &GdtPatientGender) -> String {
 
 fn gdt_get_patient_name(patient: &GdtPatientObject) -> String {
     if patient.patient_name.len() > 0 && patient.patient_first_name.len() > 0 {
-        return format!("{} {}", patient.patient_first_name, patient.patient_name);
+        return format!(
+            "{}^{}",
+            patient.patient_first_name.to_uppercase(),
+            patient.patient_name.to_uppercase()
+        );
     } else if patient.patient_name.len() > 0 {
-        return format!("{}", patient.patient_name);
+        return format!("{}", patient.patient_name.to_uppercase());
     } else {
-        return format!("{}", patient.patient_first_name);
+        return format!("{}", patient.patient_first_name.to_uppercase());
     }
 }
 
