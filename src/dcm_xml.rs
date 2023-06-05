@@ -415,9 +415,10 @@ fn gdt_get_patient_name(patient: &GdtPatientObject) -> String {
     if patient.patient_name.len() > 0 && patient.patient_first_name.len() > 0 {
         return format!(
             "{}^{}",
+            patient.patient_name.to_uppercase(),
             patient.patient_first_name.to_uppercase(),
-            patient.patient_name.to_uppercase()
-        );
+        )
+        .replace(" ", "^");
     } else if patient.patient_name.len() > 0 {
         return format!("{}", patient.patient_name.to_uppercase());
     } else {
