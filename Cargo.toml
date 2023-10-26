@@ -17,3 +17,8 @@ chrono = "0.4.26"
 name = "dicom2gdt"
 test = false
 bench = false
+
+[[bin]]
+name = "gdt2opp"
+test = false
+bench = false
