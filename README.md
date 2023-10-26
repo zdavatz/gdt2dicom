@@ -42,3 +42,9 @@ You can convert a GDT file to a Worklist file doing
 ```
 gdt2dicom --gdt-file epat.gdt --output epat.wl
 ```
+
+### GDT to Open Practice Protocol
+
+```
+./target/debug/gdt2opp --gdt-file <DCM FILE> --output opp.xml
+```

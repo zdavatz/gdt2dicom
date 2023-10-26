@@ -26,6 +26,7 @@ jobs:
           path: |
             ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
             ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
+            ./target/x86_64-unknown-linux-gnu/release/gdt2opp
           retention-days: 5
 
   build-windows:
@@ -44,6 +45,7 @@ jobs:
           path: |
             .\target\release\gdt2dicom.exe
             .\target\release\dicom2gdt.exe
+            .\target\release\gdt2opp.exe
           retention-days: 5
 
   build-mac:
@@ -66,4 +68,5 @@ jobs:
           path: |
             ./target/release/gdt2dicom
             ./target/release/dicom2gdt
+            ./target/release/gdt2opp
           retention-days: 5

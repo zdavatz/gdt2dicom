@@ -16,12 +16,14 @@ jobs:
           RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
           tar -czvf gdt2dicom-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
           tar -czvf dicom2gdt-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
+          tar -czvf gdt2opp-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2opp
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifacts: |
             gdt2dicom-linux.tar.gz
             dicom2gdt-linux.tar.gz
+            gdt2opp-linux.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -40,6 +42,7 @@ jobs:
           artifacts: |
             .\target\release\gdt2dicom.exe
             .\target\release\dicom2gdt.exe
+            .\target\release\gdt2opp.exe
 
   build-mac:
     runs-on: macos-latest
@@ -54,9 +57,11 @@ jobs:
           cargo build --release
           tar -czvf gdt2dicom-mac.tar.gz ./target/release/gdt2dicom
           tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
+          tar -czvf gdt2opp-mac.tar.gz ./target/release/gdt2opp
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifacts: |
             gdt2dicom-mac.tar.gz
             dicom2gdt-mac.tar.gz
+            gdt2opp-mac.tar.gz
