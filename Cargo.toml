@@ -22,3 +22,8 @@ bench = false
 name = "gdt2opp"
 test = false
 bench = false
+
+[[bin]]
+name = "testargs"
+test = false
+bench = false
