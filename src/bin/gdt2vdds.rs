@@ -1,0 +1,107 @@
+use log::{info, error, debug};
+use clap::Parser;
+use ini::Ini;
+
+use std::path::PathBuf;
+
+use gdt2dicom::gdt::parse_file;
+use gdt2dicom::vdds;
+
+/// Convert a gdt file to opp xml with patient info
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    gdt_file: PathBuf,
+
+    #[arg(long)]
+    vdds_mmi: Option<PathBuf>,
+
+    #[arg(long)]
+    bvs: Option<String>,
+
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
+static PVS_NAME: &str = "gdt2dicom_PVS";
+
+fn main() -> Result<(), std::io::Error> {
+    env_logger::init();
+    let args = Args::parse();
+
+    let gdt_file = parse_file(&args.gdt_file).unwrap();
+    let vdds_mmi_path = &args.vdds_mmi.unwrap_or_else(vdds::default_vdds_mmi_folder);
+    info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
+    let mut mmi = Ini::load_from_file(vdds_mmi_path).unwrap();
+
+    // println!("ini {:?}", mmi);
+
+    let pvs_section = mmi.section_mut(Some("PVS")).unwrap();
+    let pvs_count = pvs_section.len();
+    let is_inserted_to_vdds_mmi = pvs_section.iter().any(|(_key, value)| value == PVS_NAME);
+    debug!("is {} in VDDS_MMI? {}", PVS_NAME, is_inserted_to_vdds_mmi);
+    if !is_inserted_to_vdds_mmi {
+        let proposed_name = (1 ..= pvs_count + 1).find_map(|i| {
+            let name = format!("NAME{}", i);
+            if pvs_section.get(&name).is_none() {
+                Some(name)
+            } else {
+                None
+            }
+        });
+        debug!("Inserting {} to {:?}", PVS_NAME, proposed_name);
+
+        match proposed_name {
+            None => error!("Cannot insert {} into VDDS_MMI", PVS_NAME),
+            Some(name)=> {
+                pvs_section.append(name, PVS_NAME);
+
+                let current_path = std::env::current_exe()?;
+                mmi.with_section(Some(PVS_NAME))
+                    .set("MMOINFIMPORT", current_path.to_string_lossy())
+                    .set("MMOINFIMPORT_OS", vdds::vdds_os())
+                    .set("NAME", "gdt2dicom")
+                    .set("STAGES", "1234")
+                    .set("VERSION", "1.0");
+            },
+        }
+        info!("Updating VDDS_MMI");
+        mmi.write_to_file(vdds_mmi_path).unwrap();
+    }
+
+    let bvs = mmi.section(Some("BVS")).expect("BVS Section in VDDS_MMI");
+    if bvs.len() == 0 {
+        error!("No BVS Found");
+        std::process::exit(1);
+    }
+    let bvs_name = if bvs.len() == 1 {
+        let (_key, name) = bvs.iter().next().expect("First BVS");
+        name
+    } else {
+        match &args.bvs {
+            Some(preferred_bvs) => {
+                let has_bvs = bvs.iter().any(|(_key, name)| name == preferred_bvs);
+                if !has_bvs {
+                    error!("Cannot find the specified BVS, please choose from one of these:");
+                    for (_key, name) in bvs.iter() {
+                        error!("- {}", name);
+                    }
+                    std::process::exit(2)
+                } else {
+                    preferred_bvs
+                }
+            }
+            None => {
+                error!("Multiple BVS available, please specify one of the following with --bvs");
+                for (_key, name) in bvs.iter() {
+                    error!("- {}", name);
+                }
+                std::process::exit(3)
+            }
+        }
+    };
+    info!("Sending to BVS: {}", bvs_name);
+
+    return Ok(());
+}
