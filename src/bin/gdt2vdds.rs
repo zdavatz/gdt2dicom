@@ -1,6 +1,6 @@
-use log::{info, error, debug};
 use clap::Parser;
 use ini::Ini;
+use log::{debug, error, info};
 
 use std::path::PathBuf;
 
@@ -30,19 +30,16 @@ fn main() -> Result<(), std::io::Error> {
     env_logger::init();
     let args = Args::parse();
 
-    let gdt_file = parse_file(&args.gdt_file).unwrap();
     let vdds_mmi_path = &args.vdds_mmi.unwrap_or_else(vdds::default_vdds_mmi_folder);
     info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
     let mut mmi = Ini::load_from_file(vdds_mmi_path).unwrap();
-
-    // println!("ini {:?}", mmi);
 
     let pvs_section = mmi.section_mut(Some("PVS")).unwrap();
     let pvs_count = pvs_section.len();
     let is_inserted_to_vdds_mmi = pvs_section.iter().any(|(_key, value)| value == PVS_NAME);
     debug!("is {} in VDDS_MMI? {}", PVS_NAME, is_inserted_to_vdds_mmi);
     if !is_inserted_to_vdds_mmi {
-        let proposed_name = (1 ..= pvs_count + 1).find_map(|i| {
+        let proposed_name = (1..=pvs_count + 1).find_map(|i| {
             let name = format!("NAME{}", i);
             if pvs_section.get(&name).is_none() {
                 Some(name)
@@ -54,7 +51,7 @@ fn main() -> Result<(), std::io::Error> {
 
         match proposed_name {
             None => error!("Cannot insert {} into VDDS_MMI", PVS_NAME),
-            Some(name)=> {
+            Some(name) => {
                 pvs_section.append(name, PVS_NAME);
 
                 let current_path = std::env::current_exe()?;
@@ -64,7 +61,7 @@ fn main() -> Result<(), std::io::Error> {
                     .set("NAME", "gdt2dicom")
                     .set("STAGES", "1234")
                     .set("VERSION", "1.0");
-            },
+            }
         }
         info!("Updating VDDS_MMI");
         mmi.write_to_file(vdds_mmi_path).unwrap();
@@ -102,6 +99,17 @@ fn main() -> Result<(), std::io::Error> {
         }
     };
     info!("Sending to BVS: {}", bvs_name);
+
+    let bsv_section = mmi.section(Some("bvs_name")).expect("BVS-named Section");
+    let patient_export_exe = bsv_section
+        .get("PATDATIMPORT")
+        .expect("PATDATIMPORT in BVS");
+
+    let gdt_file = parse_file(&args.gdt_file).unwrap();
+    let patient_vdds_file = vdds::from_gdt(&gdt_file);
+    patient_vdds_file.send_vdds_file(patient_export_exe.to_string());
+
+    // println!("Finished, output at {}", args.output.display());
 
     return Ok(());
 }

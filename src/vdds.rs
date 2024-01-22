@@ -1,5 +1,6 @@
 use ini::Ini;
 use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 use crate::gdt::{GdtFile, GdtPatientGender};
 
@@ -28,6 +29,68 @@ pub enum VddsPatientGender {
     Female,
 }
 
+impl VddsFile {
+    pub fn to_ini(&self) -> Ini {
+        let p = &self.patient;
+        let mut ini = Ini::new();
+        let mut binding = ini.with_section(Some("PATIENT"));
+        let mut section = binding
+            .set("PVS", "THE_PVS")
+            .set("BVS", "THE_BVS")
+            .set("PATID", &p.id)
+            .set("FIRSTNAME", &p.first_name)
+            .set("LASTNAME", &p.last_name)
+            .set(
+                "SEX",
+                match p.sex {
+                    VddsPatientGender::Female => "W",
+                    VddsPatientGender::Male => "M",
+                },
+            );
+
+        // Optional fields
+        if p.title.len() > 0 {
+            section = section.set("TITLE", &p.title);
+        }
+        if p.date_of_birth.len() > 0 {
+            section = section.set("BIRTHDAY", &p.date_of_birth);
+        }
+        if p.street.len() > 0 {
+            section = section.set("STREET", &p.street);
+        }
+        if p.city.len() > 0 {
+            section = section.set("CITY", &p.city);
+        }
+        if p.phone.len() > 0 {
+            section = section.set("HOMEPHONE", &p.phone);
+        }
+        if p.mobile_phone.len() > 0 {
+            section = section.set("CELLULAR", &p.mobile_phone);
+        }
+        if p.email_address.len() > 0 {
+            section = section.set("EMAIL", &p.email_address);
+        }
+        if p.insurance_number.len() > 0 {
+            section = section.set("INSURANCENUMBER", &p.insurance_number);
+        }
+        section = section.set("READY", "1").set("ERRORLEVEL", "0");
+        return ini;
+    }
+
+    pub fn send_vdds_file<P>(&self, exe_path: P) -> Result<(), std::io::Error>
+    where
+        P: Into<PathBuf>,
+    {
+        let ini_file = self.to_ini();
+        let temp_patient_file = NamedTempFile::new()?;
+        let temp_patient_file_path = temp_patient_file.path();
+        ini_file.write_to_file(temp_patient_file_path)?;
+        Ok(())
+    }
+}
+
+fn wait_for_ready(path: &PathBuf) {}
+
 pub fn from_gdt(gdt_file: &GdtFile) -> VddsFile {
     let p = &gdt_file.object_patient;
     VddsFile {
@@ -44,49 +107,8 @@ pub fn from_gdt(gdt_file: &GdtFile) -> VddsFile {
             mobile_phone: p.mobile_phone_number.clone(),
             email_address: p.email_address.clone(),
             insurance_number: p.insurance_number.clone(),
-        }
+        },
     }
-}
-
-pub fn to_ini(file: &VddsFile) -> Ini {
-    let p = &file.patient;
-    let mut ini = Ini::new();
-    let mut binding = ini.with_section(Some("PATIENT"));
-    let mut section = binding
-        .set("PVS", "THE_PVS")
-        .set("BVS", "THE_BVS")
-        .set("PATID", &p.id)
-        .set("FIRSTNAME", &p.first_name)
-        .set("LASTNAME", &p.last_name)
-        .set("SEX", match p.sex { VddsPatientGender::Female => "W", VddsPatientGender::Male => "M", });
-
-    // Optional fields
-    if p.title.len() > 0 {
-        section = section.set("TITLE", &p.title);
-    }
-    if p.date_of_birth.len() > 0 {
-        section = section.set("BIRTHDAY", &p.date_of_birth);
-    }
-    if p.street.len() > 0 {
-        section = section.set("STREET", &p.street);
-    }
-    if p.city.len() > 0 {
-        section = section.set("CITY", &p.city);
-    }
-    if p.phone.len() > 0 {
-        section = section.set("HOMEPHONE", &p.phone);
-    }
-    if p.mobile_phone.len() > 0 {
-        section = section.set("CELLULAR", &p.mobile_phone);
-    }
-    if p.email_address.len() > 0 {
-        section = section.set("EMAIL", &p.email_address);
-    }
-    if p.insurance_number.len() > 0 {
-        section = section.set("INSURANCENUMBER", &p.insurance_number);
-    }
-    section = section.set("READY", "1").set("ERRORLEVEL", "0");
-    return ini;
 }
 
 fn gdt_date_to_vdds(str: &String) -> String {
@@ -106,7 +128,6 @@ fn gdt_gender_to_vdds(gender: &GdtPatientGender) -> VddsPatientGender {
         crate::gdt::GdtPatientGender::Female => VddsPatientGender::Female,
     }
 }
-
 
 #[cfg(target_os = "macos")]
 pub fn default_vdds_mmi_folder() -> PathBuf {

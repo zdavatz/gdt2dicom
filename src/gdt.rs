@@ -87,7 +87,7 @@ pub struct GdtPatientObject {
     pub patient_gender: GdtPatientGender, // 3110
     pub mobile_phone_number: String,      // 3618, Mobiltelefonnummer
     pub email_address: String,            // 3619 Email-Adresse des Patienten
-    pub phone_number: String,             // 3626 Telefonnummer des Patienten var alnum 0951 3458 200
+    pub phone_number: String, // 3626 Telefonnummer des Patienten var alnum 0951 3458 200
 }
 
 #[derive(Debug, Default)]
