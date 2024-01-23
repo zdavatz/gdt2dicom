@@ -25,8 +25,6 @@ struct Args {
     output: PathBuf,
 }
 
-static PVS_NAME: &str = "gdt2dicom_PVS";
-
 fn main() -> Result<(), std::io::Error> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = Args::parse();
@@ -51,8 +49,14 @@ fn main() -> Result<(), std::io::Error> {
 
     let pvs_section = mmi.section_mut(Some("PVS")).unwrap();
     let pvs_count = pvs_section.len();
-    let is_inserted_to_vdds_mmi = pvs_section.iter().any(|(_key, value)| value == PVS_NAME);
-    debug!("is {} in VDDS_MMI? {}", PVS_NAME, is_inserted_to_vdds_mmi);
+    let is_inserted_to_vdds_mmi = pvs_section
+        .iter()
+        .any(|(_key, value)| value == vdds::PVS_NAME);
+    debug!(
+        "is {} in VDDS_MMI? {}",
+        vdds::PVS_NAME,
+        is_inserted_to_vdds_mmi
+    );
     if !is_inserted_to_vdds_mmi {
         let proposed_name = (1..=pvs_count + 1).find_map(|i| {
             let name = format!("NAME{}", i);
@@ -62,15 +66,15 @@ fn main() -> Result<(), std::io::Error> {
                 None
             }
         });
-        debug!("Inserting {} to {:?}", PVS_NAME, proposed_name);
+        debug!("Inserting {} to {:?}", vdds::PVS_NAME, proposed_name);
 
         match proposed_name {
-            None => error!("Cannot insert {} into VDDS_MMI", PVS_NAME),
+            None => error!("Cannot insert {} into VDDS_MMI", vdds::PVS_NAME),
             Some(name) => {
-                pvs_section.append(name, PVS_NAME);
+                pvs_section.append(name, vdds::PVS_NAME);
 
                 let current_path = std::env::current_exe()?;
-                mmi.with_section(Some(PVS_NAME))
+                mmi.with_section(Some(vdds::PVS_NAME))
                     .set("MMOINFIMPORT", current_path.to_string_lossy())
                     .set("MMOINFIMPORT_OS", vdds::vdds_os())
                     .set("NAME", "gdt2dicom")
@@ -115,16 +119,16 @@ fn main() -> Result<(), std::io::Error> {
     };
     info!("Sending to BVS: {}", bvs_name);
 
-    let bsv_section = mmi.section(Some("bvs_name")).expect("BVS-named Section");
-    let patient_export_exe = bsv_section
+    let bsv_section = mmi.section(Some(bvs_name)).expect("BVS-named Section");
+    let patient_import_exe = bsv_section
         .get("PATDATIMPORT")
         .expect("PATDATIMPORT in BVS");
 
     let gdt_file = parse_file(&args.gdt_file).unwrap();
-    let patient_vdds_file = vdds::from_gdt(&gdt_file);
-    patient_vdds_file.send_vdds_file(patient_export_exe.to_string());
+    let patient_vdds_file = vdds::VddsPatient::new(&gdt_file);
 
-    // println!("Finished, output at {}", args.output.display());
+    info!("Sending PATDATIMPORT");
+    let _ = patient_vdds_file.send_vdds_file(patient_import_exe.to_string(), bvs_name.to_string());
 
     return Ok(());
 }
