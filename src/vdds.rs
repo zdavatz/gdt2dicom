@@ -1,5 +1,5 @@
 use ini::Ini;
-use local_encoding::Encoder;
+use local_encoding_ng::{Encoder, Encoding};
 use log::{debug, error, info};
 use std::collections::HashMap;
 use std::fs;
@@ -306,6 +306,6 @@ pub fn vdds_os() -> String {
 pub fn load_ini<P: AsRef<Path>>(path: P) -> Result<Ini, std::io::Error> {
     // TODO: Use ISO-8859-1 on non-windows
     let file_u8 = fs::read(path)?;
-    let file_str = local_encoding::Encoding::OEM.to_string(file_u8.as_slice())?;
     return Ok(Ini::load_from_str(&file_str).unwrap());
+    let file_str = Encoding::OEM.to_string(file_u8.as_slice())?;
 }
