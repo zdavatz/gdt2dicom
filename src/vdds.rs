@@ -1,6 +1,8 @@
 use ini::Ini;
+use local_encoding::Encoder;
 use log::{debug, error, info};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -234,12 +236,12 @@ where
 fn wait_for_ready(path: &Path, section_name: Option<String>) -> Ini {
     debug!("Waiting for response: {:?}", path);
     loop {
-        let mmi = Ini::load_from_file(path).unwrap();
         let section = mmi.section(section_name.clone()).unwrap();
         let ready = section.get("READY");
         if ready == Some("1") {
             let error_level = section.get("ERRORLEVEL");
             let error_text = section.get("ERRORTEXT");
+            let mmi = load_ini(path).unwrap();
 
             if error_level == Some("0") {
                 return mmi;
@@ -293,4 +295,11 @@ pub fn vdds_os() -> String {
 #[cfg(target_os = "linux")]
 pub fn vdds_os() -> String {
     "3".to_string()
+}
+
+pub fn load_ini<P: AsRef<Path>>(path: P) -> Result<Ini, std::io::Error> {
+    // TODO: Use ISO-8859-1 on non-windows
+    let file_u8 = fs::read(path)?;
+    let file_str = local_encoding::Encoding::OEM.to_string(file_u8.as_slice())?;
+    return Ok(Ini::load_from_str(&file_str).unwrap());
 }

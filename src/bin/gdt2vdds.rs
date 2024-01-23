@@ -47,7 +47,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let vdds_mmi_path = &args.vdds_mmi.unwrap_or_else(vdds::default_vdds_mmi_folder);
     info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
-    let mut mmi = Ini::load_from_file(vdds_mmi_path).unwrap();
+    let mut mmi = vdds::load_ini(vdds_mmi_path)?;
 
     let pvs_section = mmi.section_mut(Some("PVS")).unwrap();
     let pvs_count = pvs_section.len();
