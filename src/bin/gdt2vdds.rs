@@ -3,6 +3,8 @@ use env_logger::Env;
 use ini::Ini;
 use log::{debug, error, info};
 
+use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 
 use gdt2dicom::gdt::parse_file;
@@ -130,5 +132,15 @@ fn main() -> Result<(), std::io::Error> {
     info!("Sending PATDATIMPORT");
     let _ = patient_vdds_file.send_vdds_file(patient_import_exe.to_string(), bvs_name.to_string());
 
+    let info_export_exe = bsv_section
+        .get("MMOINFEXPORT")
+        .expect("MMOINFEXPORT in BVS");
+    info!("Sending MMOINFEXPORT");
+    let vdds_inf_export_req = vdds::ImageInfoRequest {
+        pat_id: gdt_file.object_patient.patient_number.clone(),
+    };
+    let mmo_infos =
+        vdds_inf_export_req.send_vdds_file(info_export_exe.to_string(), bvs_name.to_string())?;
+    debug!("MMO Infos: {:?}", mmo_infos);
     return Ok(());
 }

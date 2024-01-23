@@ -109,10 +109,69 @@ impl VddsPatient {
     }
 }
 
+pub struct ImageInfoRequest {
+    pub pat_id: String,
+}
+type ImageInfoResponse = Vec<ImageInfo>;
+#[derive(Debug, Clone)]
+pub struct ImageInfo {
+    pub mmo_id: String,
+    pub date: String,
+    pub time: String,
+}
+
+impl ImageInfoRequest {
+    pub fn to_ini(&self, bvs_name: String) -> Ini {
+        let mut ini = Ini::new();
+        ini.with_section(Some("PATID"))
+            .set("PATID", PVS_NAME)
+            .set("BVS", bvs_name)
+            .set("PATID", &self.pat_id)
+            .set("READY", "0")
+            .set("ERRORLEVEL", "0")
+            .set("ERRORTEXT", "");
         return ini;
     }
+    pub fn send_vdds_file<P>(
+        &self,
+        exe_path: P,
+        bvs_name: String,
+    ) -> Result<ImageInfoResponse, std::io::Error>
+    where
+        P: Into<PathBuf>,
+    {
+        let ini_file = self.to_ini(bvs_name);
+        let result = send_and_wait(exe_path, ini_file, Some("PATID".to_string()))?;
 
-    pub fn send_vdds_file<P>(&self, exe_path: P) -> Result<(), std::io::Error>
+        let mmos_count_str = result
+            .section(Some("MMOS"))
+            .and_then(|s| s.get("COUNT"))
+            .expect("MMOS COUNT in MMOINFEXPORT reply");
+        let mmos_count = mmos_count_str
+            .to_string()
+            .parse::<u32>()
+            .expect("MMOS COUNT integer");
+
+        let mut infos: Vec<ImageInfo> = Vec::new();
+        for i in 1..=mmos_count {
+            let s = result
+                .section(Some(format!("MMO{}", i)))
+                .expect(&format!("MMO Section {}", i));
+            let date = s.get("DATE").expect("DATE");
+            let time = s.get("TIME").unwrap_or("0000").replace(":", "");
+            if let Some(mmoid) = s.get("MMOID") {
+                infos.push(ImageInfo {
+                    mmo_id: mmoid.to_string(),
+                    date: date.to_string(),
+                    time: time.to_string(),
+                });
+            }
+        }
+
+        Ok(infos)
+    }
+}
+    pub fn send_vdds_file<P>(&self, exe_path: P) -> Result<ImagesResponse, std::io::Error>
     where
         P: Into<PathBuf>,
     {
