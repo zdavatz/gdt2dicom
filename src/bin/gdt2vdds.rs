@@ -143,6 +143,11 @@ fn main() -> Result<(), std::io::Error> {
         vdds_inf_export_req.send_vdds_file(info_export_exe.to_string(), bvs_name.to_string())?;
     debug!("MMO Infos: {:?}", mmo_infos);
 
+    if mmo_infos.len() == 0 {
+        info!("No images found. Exit.");
+        std::process::exit(0);
+    }
+
     let mut mmo_ids: Vec<String> = Vec::new();
     let mut mmo_info_map: HashMap<String, vdds::ImageInfo> = HashMap::new();
     for info in mmo_infos.iter() {
