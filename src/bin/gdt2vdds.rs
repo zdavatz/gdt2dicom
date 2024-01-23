@@ -142,5 +142,34 @@ fn main() -> Result<(), std::io::Error> {
     let mmo_infos =
         vdds_inf_export_req.send_vdds_file(info_export_exe.to_string(), bvs_name.to_string())?;
     debug!("MMO Infos: {:?}", mmo_infos);
+
+    let mut mmo_ids: Vec<String> = Vec::new();
+    let mut mmo_info_map: HashMap<String, vdds::ImageInfo> = HashMap::new();
+    for info in mmo_infos.iter() {
+        mmo_ids.push(info.mmo_id.clone());
+        mmo_info_map.insert(info.mmo_id.clone(), info.clone());
+    }
+
+    let mm_export_exe = bsv_section.get("MMOEXPORT").expect("MMOEXPORT in BVS");
+    info!("Sending MMOEXPORT");
+    let paths = vdds::ImagesRequest { mmo_ids }.send_vdds_file(mm_export_exe.to_string())?;
+
+    debug!("Image paths {:?}", paths);
+    for (id, path) in paths.iter() {
+        let info = mmo_info_map.get(id).expect("ID in MMO map");
+        let filename = format!(
+            "{}_{}_{}_{}{}.jpg",
+            &gdt_file.object_patient.patient_number,
+            &gdt_file.object_patient.patient_first_name,
+            &gdt_file.object_patient.patient_name,
+            &info.date,
+            &info.time
+        );
+        let mut this_path = args.output.clone();
+        this_path.push(filename);
+        info!("Copying to {}", this_path.display());
+        std::fs::rename(path, this_path)?;
+    }
+
     return Ok(());
 }

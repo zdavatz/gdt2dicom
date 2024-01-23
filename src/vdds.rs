@@ -171,6 +171,31 @@ impl ImageInfoRequest {
         Ok(infos)
     }
 }
+
+pub struct ImagesRequest {
+    pub mmo_ids: Vec<String>,
+}
+
+type ImagesResponse = HashMap<String, String>;
+
+impl ImagesRequest {
+    pub fn to_ini(&self) -> Ini {
+        let mut ini = Ini::new();
+        let mut binding = ini.with_section(Some("MMOIDS"));
+        let mut section = binding
+            .set("PATID", PVS_NAME)
+            .set("COUNT", self.mmo_ids.len().to_string())
+            .set("EXT", "JPG") // TODO: option
+            .set("READY", "0")
+            .set("ERRORLEVEL", "0")
+            .set("ERRORTEXT", "");
+
+        for (i, mmo_id) in self.mmo_ids.iter().enumerate() {
+            section = section.set(format!("MMOID{}", i + 1), mmo_id)
+        }
+
+        return ini;
+    }
     pub fn send_vdds_file<P>(&self, exe_path: P) -> Result<ImagesResponse, std::io::Error>
     where
         P: Into<PathBuf>,
