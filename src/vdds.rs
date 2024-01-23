@@ -126,7 +126,7 @@ impl ImageInfoRequest {
     pub fn to_ini(&self, bvs_name: String) -> Ini {
         let mut ini = Ini::new();
         ini.with_section(Some("PATID"))
-            .set("PATID", PVS_NAME)
+            .set("PVS", PVS_NAME)
             .set("BVS", bvs_name)
             .set("PATID", &self.pat_id)
             .set("READY", "0")
@@ -185,7 +185,7 @@ impl ImagesRequest {
         let mut ini = Ini::new();
         let mut binding = ini.with_section(Some("MMOIDS"));
         let mut section = binding
-            .set("PATID", PVS_NAME)
+            .set("PVS", PVS_NAME)
             .set("COUNT", self.mmo_ids.len().to_string())
             .set("EXT", "JPG") // TODO: option
             .set("READY", "0")
@@ -222,32 +222,38 @@ pub fn send_and_wait<P>(
 where
     P: Into<PathBuf>,
 {
-    let temp_file = NamedTempFile::new()?;
-    let temp_file_path = temp_file.path();
-    ini.write_to_file(&temp_file_path)?;
+    let path = {
+        let temp_file = NamedTempFile::new()?;
+        let temp_file_path = temp_file.path();
+        ini.write_to_file(&temp_file_path)?;
+        let (_file, p) = temp_file.keep().unwrap();
+        p
+    };
     let path = exe_path.into();
     let path_str = path.to_string_lossy();
     info!("Sending ini to {:?}", &path_str);
-    exec_command(&path_str, vec![temp_file_path], true)?;
-    let result = wait_for_ready(temp_file_path, section_name);
+    exec_command(&path_str, vec![path.clone()], true)?;
+    let result = wait_for_ready(&path, section_name);
     return Ok(result);
 }
 
 fn wait_for_ready(path: &Path, section_name: Option<String>) -> Ini {
     debug!("Waiting for response: {:?}", path);
     loop {
-        let section = mmi.section(section_name.clone()).unwrap();
-        let ready = section.get("READY");
-        if ready == Some("1") {
-            let error_level = section.get("ERRORLEVEL");
-            let error_text = section.get("ERRORTEXT");
+        {
             let mmi = load_ini(path).unwrap();
+            let section = mmi.section(section_name.clone()).unwrap();
+            let ready = section.get("READY");
+            if ready == Some("1") {
+                let error_level = section.get("ERRORLEVEL");
+                let error_text = section.get("ERRORTEXT");
 
-            if error_level == Some("0") {
-                return mmi;
+                if error_level == Some("0") {
+                    return mmi;
+                }
+                error!("Error from BVS: ({:?}): {:?}", error_level, error_text);
+                std::process::exit(100);
             }
-            error!("Error from BVS: ({:?}): {:?}", error_level, error_text);
-            std::process::exit(100);
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
