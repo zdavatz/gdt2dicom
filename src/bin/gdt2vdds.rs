@@ -31,6 +31,20 @@ fn main() -> Result<(), std::io::Error> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 
+    let output_attr = fs::metadata(&args.output);
+    match output_attr {
+        Err(err) => {
+            error!("Output has to be a folder");
+            error!("{}", err);
+            std::process::exit(1);
+        }
+        Ok(attr) if !attr.is_dir() => {
+            error!("Output has to be a folder");
+            std::process::exit(1);
+        }
+        _ => {}
+    }
+
     let vdds_mmi_path = &args.vdds_mmi.unwrap_or_else(vdds::default_vdds_mmi_folder);
     info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
     let mut mmi = Ini::load_from_file(vdds_mmi_path).unwrap();
