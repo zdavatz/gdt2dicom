@@ -306,6 +306,10 @@ pub fn vdds_os() -> String {
 pub fn load_ini<P: AsRef<Path>>(path: P) -> Result<Ini, std::io::Error> {
     // TODO: Use ISO-8859-1 on non-windows
     let file_u8 = fs::read(path)?;
-    return Ok(Ini::load_from_str(&file_str).unwrap());
     let file_str = Encoding::OEM.to_string(file_u8.as_slice())?;
+    let opts = ini::ParseOption {
+        enabled_quote: true,
+        enabled_escape: false,
+    };
+    return Ok(Ini::load_from_str_opt(&file_str, opts).unwrap());
 }
