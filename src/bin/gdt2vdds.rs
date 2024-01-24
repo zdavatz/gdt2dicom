@@ -1,9 +1,7 @@
 use clap::Parser;
 use env_logger::Env;
-use ini::Ini;
 use log::{debug, error, info};
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -148,33 +146,52 @@ fn main() -> Result<(), std::io::Error> {
         std::process::exit(0);
     }
 
-    let mut mmo_ids: Vec<String> = Vec::new();
-    let mut mmo_info_map: HashMap<String, vdds::ImageInfo> = HashMap::new();
-    for info in mmo_infos.iter() {
-        mmo_ids.push(info.mmo_id.clone());
-        mmo_info_map.insert(info.mmo_id.clone(), info.clone());
-    }
-
     let mm_export_exe = bsv_section.get("MMOEXPORT").expect("MMOEXPORT in BVS");
     info!("Sending MMOEXPORT");
-    let paths = vdds::ImagesRequest { mmo_ids }.send_vdds_file(mm_export_exe.to_string())?;
+    let paths = vdds::ImagesRequest {
+        mmo_infos: mmo_infos.clone(),
+    }
+    .send_vdds_file(mm_export_exe.to_string())?;
 
     debug!("Image paths {:?}", paths);
     for (id, path) in paths.iter() {
-        let info = mmo_info_map.get(id).expect("ID in MMO map");
+        let path_buf: PathBuf = path.into();
+        let ext = path_buf
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .unwrap_or("".to_string());
+        let info = mmo_infos.get(id).expect("ID in MMO map");
         let filename = format!(
-            "{}_{}_{}_{}{}.jpg",
+            "{}_{}_{}_{}{}_{}{}",
             &gdt_file.object_patient.patient_number,
             &gdt_file.object_patient.patient_first_name,
             &gdt_file.object_patient.patient_name,
             &info.date,
-            &info.time
+            &info.time,
+            &info.mmo_id,
+            ext,
         );
         let mut this_path = args.output.clone();
         this_path.push(filename);
-        info!("Copying to {}", this_path.display());
-        std::fs::rename(path, this_path)?;
+        debug!("Copying {} to {}", &path, this_path.display());
+        let copy_result = std::fs::rename(path, &this_path);
+        if let Err(err) = copy_result {
+            error!(
+                "Cannot copy {} to {}. {:?}",
+                &path,
+                this_path.display(),
+                err
+            );
+        }
     }
+
+    for (key, info) in mmo_infos {
+        if !paths.contains_key(&key) {
+            error!("File not available: {}", info.mmo_id);
+        }
+    }
+
+    info!("Finished");
 
     return Ok(());
 }

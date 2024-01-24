@@ -105,7 +105,7 @@ impl VddsPatient {
     {
         let ini_file = self.to_ini(bvs_name);
 
-        let result = send_and_wait(exe_path, ini_file, Some("PATIENT".to_string()))?;
+        let result = send_and_wait(exe_path, ini_file, Some("PATIENT".to_string()), false)?;
 
         Ok(result)
     }
@@ -114,7 +114,7 @@ impl VddsPatient {
 pub struct ImageInfoRequest {
     pub pat_id: String,
 }
-type ImageInfoResponse = Vec<ImageInfo>;
+type ImageInfoResponse = HashMap<String, ImageInfo>;
 #[derive(Debug, Clone)]
 pub struct ImageInfo {
     pub mmo_id: String,
@@ -143,7 +143,7 @@ impl ImageInfoRequest {
         P: Into<PathBuf>,
     {
         let ini_file = self.to_ini(bvs_name);
-        let result = send_and_wait(exe_path, ini_file, Some("PATID".to_string()))?;
+        let result = send_and_wait(exe_path, ini_file, Some("PATID".to_string()), false)?;
 
         let mmos_count_str = result
             .section(Some("MMOS"))
@@ -154,7 +154,7 @@ impl ImageInfoRequest {
             .parse::<u32>()
             .expect("MMOS COUNT integer");
 
-        let mut infos: Vec<ImageInfo> = Vec::new();
+        let mut infos: HashMap<String, ImageInfo> = HashMap::new();
         for i in 1..=mmos_count {
             let s = result
                 .section(Some(format!("MMO{}", i)))
@@ -162,11 +162,14 @@ impl ImageInfoRequest {
             let date = s.get("DATE").expect("DATE");
             let time = s.get("TIME").unwrap_or("0000").replace(":", "");
             if let Some(mmoid) = s.get("MMOID") {
-                infos.push(ImageInfo {
-                    mmo_id: mmoid.to_string(),
-                    date: date.to_string(),
-                    time: time.to_string(),
-                });
+                infos.insert(
+                    format!("MMOID{}", i),
+                    ImageInfo {
+                        mmo_id: mmoid.to_string(),
+                        date: date.to_string(),
+                        time: time.to_string(),
+                    },
+                );
             }
         }
 
@@ -175,7 +178,7 @@ impl ImageInfoRequest {
 }
 
 pub struct ImagesRequest {
-    pub mmo_ids: Vec<String>,
+    pub mmo_infos: ImageInfoResponse,
 }
 
 type ImagesResponse = HashMap<String, String>;
@@ -186,14 +189,14 @@ impl ImagesRequest {
         let mut binding = ini.with_section(Some("MMOIDS"));
         let mut section = binding
             .set("PVS", PVS_NAME)
-            .set("COUNT", self.mmo_ids.len().to_string())
+            .set("COUNT", self.mmo_infos.len().to_string())
             .set("EXT", "JPG") // TODO: option
             .set("READY", "0")
             .set("ERRORLEVEL", "0")
             .set("ERRORTEXT", "");
 
-        for (i, mmo_id) in self.mmo_ids.iter().enumerate() {
-            section = section.set(format!("MMOID{}", i + 1), mmo_id)
+        for (key, info) in self.mmo_infos.iter() {
+            section = section.set(key, info.mmo_id.clone());
         }
 
         return ini;
@@ -203,13 +206,22 @@ impl ImagesRequest {
         P: Into<PathBuf>,
     {
         let ini_file = self.to_ini();
-        let result = send_and_wait(exe_path, ini_file, Some("MMOIDS".to_string()))?;
+        let result = send_and_wait(exe_path, ini_file, Some("MMOIDS".to_string()), true)?;
+
+        let ids_section = result.section(Some("MMOIDS")).unwrap();
+
+        let error_level = ids_section.get("ERRORLEVEL");
+        let error_text = ids_section.get("ERRORTEXT");
+        if error_level != Some("0") {
+            error!("Error from BVS {:?} {:?}", error_level, error_text);
+        }
 
         let section = result.section(Some("MMOPATH")).expect("MMOPATH in reply");
         let mut paths: HashMap<String, String> = HashMap::new();
         for (key, value) in section.iter() {
             paths.insert(key.to_string(), value.to_string());
         }
+        // TODO: delete file
         Ok(paths)
     }
 }
@@ -218,39 +230,40 @@ pub fn send_and_wait<P>(
     exe_path: P,
     ini: Ini,
     section_name: Option<String>,
+    allow_fail: bool,
 ) -> Result<Ini, std::io::Error>
 where
     P: Into<PathBuf>,
 {
-    let path = {
+    let ini_path = {
         let temp_file = NamedTempFile::new()?;
         let temp_file_path = temp_file.path();
         ini.write_to_file(&temp_file_path)?;
         let (_file, p) = temp_file.keep().unwrap();
         p
     };
-    let path = exe_path.into();
-    let path_str = path.to_string_lossy();
-    info!("Sending ini to {:?}", &path_str);
-    exec_command(&path_str, vec![path.clone()], true)?;
-    let result = wait_for_ready(&path, section_name);
+    let exe = exe_path.into();
+    let exe_path_str = exe.to_string_lossy();
+    info!("Sending ini to {:?}", &exe_path_str);
+    exec_command(&exe_path_str, vec![ini_path.clone()], true)?;
+    let result = wait_for_ready(&ini_path, section_name, allow_fail);
     return Ok(result);
 }
 
-fn wait_for_ready(path: &Path, section_name: Option<String>) -> Ini {
+fn wait_for_ready(path: &Path, section_name: Option<String>, allow_fail: bool) -> Ini {
     debug!("Waiting for response: {:?}", path);
     loop {
         {
-            let mmi = load_ini(path).unwrap();
-            let section = mmi.section(section_name.clone()).unwrap();
+            let ini = load_ini(path).unwrap();
+            let section = ini.section(section_name.clone()).unwrap();
             let ready = section.get("READY");
             if ready == Some("1") {
                 let error_level = section.get("ERRORLEVEL");
-                let error_text = section.get("ERRORTEXT");
 
-                if error_level == Some("0") {
-                    return mmi;
+                if error_level == Some("0") || allow_fail {
+                    return ini;
                 }
+                let error_text = section.get("ERRORTEXT");
                 error!("Error from BVS: ({:?}): {:?}", error_level, error_text);
                 std::process::exit(100);
             }
