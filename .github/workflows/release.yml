@@ -17,6 +17,7 @@ jobs:
           tar -czvf gdt2dicom-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
           tar -czvf dicom2gdt-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
           tar -czvf gdt2opp-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2opp
+          tar -czvf gdt2vdds-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -24,6 +25,7 @@ jobs:
             gdt2dicom-linux.tar.gz
             dicom2gdt-linux.tar.gz
             gdt2opp-linux.tar.gz
+            gdt2vdds-linux.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -43,6 +45,7 @@ jobs:
             .\target\release\gdt2dicom.exe
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
+            .\target\release\gdt2vdds.exe
 
   build-mac:
     runs-on: macos-latest
@@ -58,6 +61,7 @@ jobs:
           tar -czvf gdt2dicom-mac.tar.gz ./target/release/gdt2dicom
           tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
           tar -czvf gdt2opp-mac.tar.gz ./target/release/gdt2opp
+          tar -czvf gdt2vdds-mac.tar.gz ./target/release/gdt2vdds
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -65,3 +69,4 @@ jobs:
             gdt2dicom-mac.tar.gz
             dicom2gdt-mac.tar.gz
             gdt2opp-mac.tar.gz
+            gdt2vdds-mac.tar.gz
