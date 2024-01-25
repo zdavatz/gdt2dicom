@@ -99,13 +99,24 @@ impl VddsPatient {
         return ini;
     }
 
-    pub fn send_vdds_file<P>(&self, exe_path: P, bvs_name: String) -> Result<Ini, std::io::Error>
+    pub fn send_vdds_file<P>(
+        &self,
+        exe_path: P,
+        bvs_name: String,
+        keep_file: bool,
+    ) -> Result<Ini, std::io::Error>
     where
         P: Into<PathBuf>,
     {
         let ini_file = self.to_ini(bvs_name);
 
-        let result = send_and_wait(exe_path, ini_file, Some("PATIENT".to_string()), false)?;
+        let result = send_and_wait(
+            exe_path,
+            ini_file,
+            Some("PATIENT".to_string()),
+            false,
+            keep_file,
+        )?;
 
         Ok(result)
     }
@@ -138,12 +149,19 @@ impl ImageInfoRequest {
         &self,
         exe_path: P,
         bvs_name: String,
+        keep_file: bool,
     ) -> Result<ImageInfoResponse, std::io::Error>
     where
         P: Into<PathBuf>,
     {
         let ini_file = self.to_ini(bvs_name);
-        let result = send_and_wait(exe_path, ini_file, Some("PATID".to_string()), false)?;
+        let result = send_and_wait(
+            exe_path,
+            ini_file,
+            Some("PATID".to_string()),
+            false,
+            keep_file,
+        )?;
 
         let mmos_count_str = result
             .section(Some("MMOS"))
@@ -179,6 +197,7 @@ impl ImageInfoRequest {
 
 pub struct ImagesRequest {
     pub mmo_infos: ImageInfoResponse,
+    pub ext: String,
 }
 
 type ImagesResponse = HashMap<String, String>;
@@ -201,12 +220,22 @@ impl ImagesRequest {
 
         return ini;
     }
-    pub fn send_vdds_file<P>(&self, exe_path: P) -> Result<ImagesResponse, std::io::Error>
+    pub fn send_vdds_file<P>(
+        &self,
+        exe_path: P,
+        keep_file: bool,
+    ) -> Result<ImagesResponse, std::io::Error>
     where
         P: Into<PathBuf>,
     {
         let ini_file = self.to_ini();
-        let result = send_and_wait(exe_path, ini_file, Some("MMOIDS".to_string()), true)?;
+        let result = send_and_wait(
+            exe_path,
+            ini_file,
+            Some("MMOIDS".to_string()),
+            true,
+            keep_file,
+        )?;
 
         let ids_section = result.section(Some("MMOIDS")).unwrap();
 
@@ -221,7 +250,6 @@ impl ImagesRequest {
         for (key, value) in section.iter() {
             paths.insert(key.to_string(), value.to_string());
         }
-        // TODO: delete file
         Ok(paths)
     }
 }
@@ -231,6 +259,7 @@ pub fn send_and_wait<P>(
     ini: Ini,
     section_name: Option<String>,
     allow_fail: bool,
+    keep_file: bool,
 ) -> Result<Ini, std::io::Error>
 where
     P: Into<PathBuf>,
@@ -246,11 +275,16 @@ where
     let exe_path_str = exe.to_string_lossy();
     info!("Sending ini to {:?}", &exe_path_str);
     exec_command(&exe_path_str, vec![ini_path.clone()], true)?;
-    let result = wait_for_ready(&ini_path, section_name, allow_fail);
+    let result = wait_for_ready(&ini_path, section_name, allow_fail, keep_file);
     return Ok(result);
 }
 
-fn wait_for_ready(path: &Path, section_name: Option<String>, allow_fail: bool) -> Ini {
+fn wait_for_ready(
+    path: &Path,
+    section_name: Option<String>,
+    allow_fail: bool,
+    keep_file: bool,
+) -> Ini {
     debug!("Waiting for response: {:?}", path);
     loop {
         {
@@ -261,6 +295,9 @@ fn wait_for_ready(path: &Path, section_name: Option<String>, allow_fail: bool) -
                 let error_level = section.get("ERRORLEVEL");
 
                 if error_level == Some("0") || allow_fail {
+                    if !keep_file {
+                        _ = fs::remove_file(path);
+                    }
                     return ini;
                 }
                 let error_text = section.get("ERRORTEXT");

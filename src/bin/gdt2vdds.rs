@@ -30,6 +30,10 @@ struct Args {
     /// One of TIF, JPG, PNG, DCM
     #[arg(short, long, default_value = "JPG")]
     ext: String,
+
+    /// Keep the temp file for debug
+    #[arg(long, default_value_t = false)]
+    keep_temp_file: bool,
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -146,7 +150,11 @@ fn main() -> Result<(), std::io::Error> {
     let patient_vdds_file = vdds::VddsPatient::new(&gdt_file);
 
     info!("Sending PATDATIMPORT");
-    let _ = patient_vdds_file.send_vdds_file(patient_import_exe.to_string(), bvs_name.to_string());
+    let _ = patient_vdds_file.send_vdds_file(
+        patient_import_exe.to_string(),
+        bvs_name.to_string(),
+        args.keep_temp_file,
+    );
 
     let info_export_exe = bsv_section
         .get("MMOINFEXPORT")
@@ -155,8 +163,11 @@ fn main() -> Result<(), std::io::Error> {
     let vdds_inf_export_req = vdds::ImageInfoRequest {
         pat_id: gdt_file.object_patient.patient_number.clone(),
     };
-    let mmo_infos =
-        vdds_inf_export_req.send_vdds_file(info_export_exe.to_string(), bvs_name.to_string())?;
+    let mmo_infos = vdds_inf_export_req.send_vdds_file(
+        info_export_exe.to_string(),
+        bvs_name.to_string(),
+        args.keep_temp_file,
+    )?;
     debug!("MMO Infos: {:?}", mmo_infos);
 
     if mmo_infos.len() == 0 {
@@ -170,7 +181,7 @@ fn main() -> Result<(), std::io::Error> {
         mmo_infos: mmo_infos.clone(),
         ext,
     }
-    .send_vdds_file(mm_export_exe.to_string())?;
+    .send_vdds_file(mm_export_exe.to_string(), args.keep_temp_file)?;
 
     debug!("Image paths {:?}", paths);
     for (id, path) in paths.iter() {
