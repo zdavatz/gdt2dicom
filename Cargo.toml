@@ -12,6 +12,10 @@ log = "0.4"
 tempfile = "3.4.0"
 xml-rs = "0.8.4"
 chrono = "0.4.26"
+rust-ini = "0.20.0"
+env_logger = "0.11.0"
+local-encoding-ng = "0.1.0"
+encoding = "0.2.33"
 
 [[bin]]
 name = "dicom2gdt"
@@ -20,5 +24,15 @@ bench = false
 
 [[bin]]
 name = "gdt2opp"
+test = false
+bench = false
+
+[[bin]]
+name = "gdt2vdds"
+test = false
+bench = false
+
+[[bin]]
+name = "testargs"
 test = false
 bench = false

@@ -80,7 +80,14 @@ pub struct GdtPatientObject {
     pub patient_name: String,             // 3101
     pub patient_first_name: String,       // 3102
     pub patient_dob: String,              // 3103, DDMMYYYY
+    pub patient_title: String,            // 3104, Titel des Patienten
+    pub insurance_number: String,         // 3105, Versichertennummer des Patienten
+    pub address: String,                  // 3106, Wohnort des Patienten
+    pub street: String,                   // 3107, Straße des Patienten
     pub patient_gender: GdtPatientGender, // 3110
+    pub mobile_phone_number: String,      // 3618, Mobiltelefonnummer
+    pub email_address: String,            // 3619 Email-Adresse des Patienten
+    pub phone_number: String, // 3626 Telefonnummer des Patienten var alnum 0951 3458 200
 }
 
 #[derive(Debug, Default)]
@@ -330,6 +337,48 @@ fn read_patient_object(iter: &mut GdtLineIter) -> Result<GdtPatientObject, GdtEr
                 content,
             }) => {
                 obj.patient_dob = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3104,
+                content,
+            }) => {
+                obj.patient_title = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3105,
+                content,
+            }) => {
+                obj.insurance_number = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3106,
+                content,
+            }) => {
+                obj.address = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3107,
+                content,
+            }) => {
+                obj.street = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3618,
+                content,
+            }) => {
+                obj.mobile_phone_number = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3619,
+                content,
+            }) => {
+                obj.email_address = content;
+            }
+            Ok(RawGdtLine {
+                field_identifier: 3626,
+                content,
+            }) => {
+                obj.phone_number = content;
             }
             Ok(RawGdtLine {
                 field_identifier: 3110,
