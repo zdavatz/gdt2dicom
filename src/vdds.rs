@@ -190,7 +190,7 @@ impl ImagesRequest {
         let mut section = binding
             .set("PVS", PVS_NAME)
             .set("COUNT", self.mmo_infos.len().to_string())
-            .set("EXT", "JPG") // TODO: option
+            .set("EXT", self.ext.clone())
             .set("READY", "0")
             .set("ERRORLEVEL", "0")
             .set("ERRORTEXT", "");

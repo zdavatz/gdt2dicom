@@ -15,14 +15,21 @@ struct Args {
     #[arg(short, long)]
     gdt_file: PathBuf,
 
+    /// Override the path of the VDDS_MMI.ini file, optional.
     #[arg(long)]
     vdds_mmi: Option<PathBuf>,
 
+    /// The name of the BVS, must be one of the BVS in VDDS_MMI
     #[arg(long)]
     bvs: Option<String>,
 
+    /// A folder for saving images
     #[arg(short, long)]
     output: PathBuf,
+
+    /// One of TIF, JPG, PNG, DCM
+    #[arg(short, long, default_value = "JPG")]
+    ext: String,
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -42,6 +49,17 @@ fn main() -> Result<(), std::io::Error> {
         }
         _ => {}
     }
+
+    let ext = {
+        let upper = args.ext.to_ascii_uppercase();
+        match upper.as_ref() {
+            "TIF" | "JPG" | "PNG" | "DCM" => upper,
+            _ => {
+                error!("Invalid EXT, must be one of TIF, JPG, PNG, DCM");
+                std::process::exit(1);
+            }
+        }
+    };
 
     let vdds_mmi_path = &args.vdds_mmi.unwrap_or_else(vdds::default_vdds_mmi_folder);
     info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
@@ -150,6 +168,7 @@ fn main() -> Result<(), std::io::Error> {
     info!("Sending MMOEXPORT");
     let paths = vdds::ImagesRequest {
         mmo_infos: mmo_infos.clone(),
+        ext,
     }
     .send_vdds_file(mm_export_exe.to_string())?;
 
