@@ -316,10 +316,36 @@ pub fn vdds_os() -> String {
     "3".to_string()
 }
 
-pub fn load_ini<P: AsRef<Path>>(path: P) -> Result<Ini, std::io::Error> {
-    // TODO: Use ISO-8859-1 on non-windows
+pub fn read_str_with_iso8859_1<P: AsRef<Path>>(path: P) -> Result<String, std::io::Error> {
+    use encoding::Encoding;
+    let file_u8 = fs::read(path)?;
+    return Ok(encoding::all::ISO_8859_1
+        .decode(file_u8.as_slice(), encoding::types::DecoderTrap::Replace)
+        .unwrap());
+}
+
+pub fn read_str_with_local_encoding<P: AsRef<Path>>(path: P) -> Result<String, std::io::Error> {
     let file_u8 = fs::read(path)?;
     let file_str = Encoding::OEM.to_string(file_u8.as_slice())?;
+    return Ok(file_str);
+}
+
+#[cfg(target_os = "windows")]
+pub fn read_with_encoding<P: AsRef<Path>>(path: P) -> Result<String, std::io::Error> {
+    return read_str_with_local_encoding(path);
+}
+
+#[cfg(target_os = "macos")]
+pub fn read_with_encoding<P: AsRef<Path>>(path: P) -> Result<String, std::io::Error> {
+    return read_str_with_iso8859_1(path);
+}
+#[cfg(target_os = "linux")]
+pub fn read_with_encoding<P: AsRef<Path>>(path: P) -> Result<String, std::io::Error> {
+    return read_str_with_iso8859_1(path);
+}
+
+pub fn load_ini<P: AsRef<Path>>(path: P) -> Result<Ini, std::io::Error> {
+    let file_str = read_with_encoding(path)?;
     let opts = ini::ParseOption {
         enabled_quote: true,
         enabled_escape: false,
