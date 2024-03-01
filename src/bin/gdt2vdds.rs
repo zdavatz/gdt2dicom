@@ -69,41 +69,48 @@ fn main() -> Result<(), std::io::Error> {
     info!("Loading VDDS_MMI: {}", vdds_mmi_path.display());
     let mut mmi = vdds::load_ini(vdds_mmi_path)?;
 
-    let pvs_section = mmi.section_mut(Some("PVS")).unwrap();
-    let pvs_count = pvs_section.len();
-    let is_inserted_to_vdds_mmi = pvs_section
-        .iter()
-        .any(|(_key, value)| value == vdds::PVS_NAME);
-    debug!(
-        "is {} in VDDS_MMI? {}",
-        vdds::PVS_NAME,
-        is_inserted_to_vdds_mmi
-    );
-    if !is_inserted_to_vdds_mmi {
-        let proposed_name = (1..=pvs_count + 1).find_map(|i| {
-            let name = format!("NAME{}", i);
-            if pvs_section.get(&name).is_none() {
-                Some(name)
-            } else {
-                None
-            }
-        });
-        debug!("Inserting {} to {:?}", vdds::PVS_NAME, proposed_name);
-
-        match proposed_name {
-            None => error!("Cannot insert {} into VDDS_MMI", vdds::PVS_NAME),
-            Some(name) => {
-                pvs_section.append(name, vdds::PVS_NAME);
-
-                let current_path = std::env::current_exe()?;
-                mmi.with_section(Some(vdds::PVS_NAME))
-                    .set("MMOINFIMPORT", current_path.to_string_lossy())
-                    .set("MMOINFIMPORT_OS", vdds::vdds_os())
-                    .set("NAME", "gdt2dicom")
-                    .set("STAGES", "1234")
-                    .set("VERSION", "1.0");
-            }
+    let need_to_insert_section = if let Some(pvs_section) = mmi.section_mut(Some("PVS")) {
+        let pvs_count = pvs_section.len();
+        let is_inserted_to_vdds_mmi = pvs_section
+            .iter()
+            .any(|(_key, value)| value == vdds::PVS_NAME);
+        debug!(
+            "is {} in VDDS_MMI? {}",
+            vdds::PVS_NAME,
+            is_inserted_to_vdds_mmi
+        );
+        if !is_inserted_to_vdds_mmi {
+            let proposed_name = (1..=pvs_count + 1).find_map(|i| {
+                let name = format!("NAME{}", i);
+                if pvs_section.get(&name).is_none() {
+                    Some(name)
+                } else {
+                    None
+                }
+            });
+            debug!("Inserting {} to {:?}", vdds::PVS_NAME, proposed_name);
+            match proposed_name {
+                None => error!("Cannot insert {} into VDDS_MMI", vdds::PVS_NAME),
+                Some(name) => {
+                    pvs_section.append(name, vdds::PVS_NAME);
+                }
+            };
+            true
+        } else {
+            false
         }
+    } else {
+        mmi.with_section(Some("PVS")).set("NAME1", vdds::PVS_NAME);
+        true
+    };
+    if need_to_insert_section {
+        let current_path = std::env::current_exe()?;
+        mmi.with_section(Some(vdds::PVS_NAME))
+            .set("MMOINFIMPORT", current_path.to_string_lossy())
+            .set("MMOINFIMPORT_OS", vdds::vdds_os())
+            .set("NAME", "gdt2dicom")
+            .set("STAGES", "1234")
+            .set("VERSION", "1.0");
         info!("Updating VDDS_MMI");
         mmi.write_to_file(vdds_mmi_path).unwrap();
     }
