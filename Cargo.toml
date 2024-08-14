@@ -16,6 +16,7 @@ rust-ini = "0.20.0"
 env_logger = "0.11.0"
 local-encoding-ng = "0.1.0"
 encoding = "0.2.33"
+gtk = { version = "0.9.0", package = "gtk4", features = ["v4_14"] }
 
 [[bin]]
 name = "dicom2gdt"
@@ -34,5 +35,10 @@ bench = false
 
 [[bin]]
 name = "testargs"
+test = false
+bench = false
+
+[[bin]]
+name = "gui"
 test = false
 bench = false
