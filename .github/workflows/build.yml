@@ -7,14 +7,25 @@ on:
 
 jobs:
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install libgtk-4-dev build-essential
+          pkg-config --modversion gtk4
+          pkg-config --cflags gtk4
+          pkg-config --libs gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
       - name: Check format
         run: |
           cd ${{ github.workspace }}
@@ -28,6 +39,7 @@ jobs:
             ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
             ./target/x86_64-unknown-linux-gnu/release/gdt2opp
             ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
+            ./target/x86_64-unknown-linux-gnu/release/gui
           retention-days: 5
 
   build-windows:
@@ -35,10 +47,18 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          choco install msys2 visualstudio2022-workload-vctools python312 pkgconfiglite gtk-runtime
+          py -3.12 -m pip install --user pipx
+          py -3.12 -m pipx ensurepath
+          pipx install gvsbuild
+          gvsbuild build gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          cargo build --release
+          $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk-build/gtk/x64/release/lib/pkgconfig"
+          cargo build --verbose --release
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -48,6 +68,7 @@ jobs:
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
+            .\target\release\gui.exe
           retention-days: 5
 
   build-mac:
@@ -55,6 +76,9 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          brew install gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
@@ -72,4 +96,5 @@ jobs:
             ./target/release/dicom2gdt
             ./target/release/gdt2opp
             ./target/release/gdt2vdds
+            ./target/release/gui
           retention-days: 5
