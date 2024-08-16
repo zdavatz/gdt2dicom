@@ -10,10 +10,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install libgtk-4-dev build-essential
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
           tar -czvf gdt2dicom-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
           tar -czvf dicom2gdt-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
           tar -czvf gdt2opp-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2opp
@@ -26,6 +31,7 @@ jobs:
             dicom2gdt-linux.tar.gz
             gdt2opp-linux.tar.gz
             gdt2vdds-linux.tar.gz
+            gui-linux.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -34,9 +40,17 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          choco install msys2 visualstudio2022-workload-vctools python312 pkgconfiglite gtk-runtime
+          py -3.12 -m pip install --user pipx
+          py -3.12 -m pipx ensurepath
+          pipx install gvsbuild
+          gvsbuild build gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
+          $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk-build/gtk/x64/release/lib/pkgconfig"
           cargo build --release
       - uses: ncipollo/release-action@v1
         with:
@@ -46,6 +60,7 @@ jobs:
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
+            .\target\release\gui.exe
 
   build-mac:
     runs-on: macos-latest
@@ -54,6 +69,9 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          brew install gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
@@ -62,6 +80,7 @@ jobs:
           tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
           tar -czvf gdt2opp-mac.tar.gz ./target/release/gdt2opp
           tar -czvf gdt2vdds-mac.tar.gz ./target/release/gdt2vdds
+          tar -czvf gui-mac.tar.gz ./target/release/gui
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -70,3 +89,4 @@ jobs:
             dicom2gdt-mac.tar.gz
             gdt2opp-mac.tar.gz
             gdt2vdds-mac.tar.gz
+            gui-mac.tar.gz
