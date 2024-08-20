@@ -136,6 +136,19 @@ pub enum GdtError {
     InvalidValue(String, String),
 }
 
+impl std::fmt::Display for GdtError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GdtError::IoError(io_err) => {
+                write!(f, "{}", io_err.to_string())
+            }
+            _ => {
+                write!(f, "{:?}", self)
+            }
+        }
+    }
+}
+
 pub fn parse_file_lines<P>(
     path: P,
 ) -> Result<impl std::iter::Iterator<Item = Result<RawGdtLine, GdtError>>, GdtError>

@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::io::Write;
+use std::io::{Error, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -16,19 +16,29 @@ pub fn dcm_xml_to_worklist(
 
     let temp_dcm_file = NamedTempFile::new()?;
     let temp_dcm_file_path = temp_dcm_file.path();
-    exec_command(
+    let output1 = exec_command(
         "xml2dcm",
         vec![xml_file_path.as_os_str(), temp_dcm_file_path.as_os_str()],
         true,
     )?;
+    if !output1.status.success() {
+        let err_str = std::str::from_utf8(&output1.stderr).unwrap();
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(custom_error);
+    }
 
     let mut temp_dump_file = NamedTempFile::new()?;
 
-    let output = exec_command("dcmdump", vec![temp_dcm_file_path.as_os_str()], false)?;
-    std::io::stderr().write_all(&output.stderr).unwrap();
-    temp_dump_file.write_all(&output.stdout)?;
+    let output2 = exec_command("dcmdump", vec![temp_dcm_file_path.as_os_str()], false)?;
+    std::io::stderr().write_all(&output2.stderr).unwrap();
+    temp_dump_file.write_all(&output2.stdout)?;
+    if !output2.status.success() {
+        let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(custom_error);
+    }
 
-    exec_command(
+    let output3 = exec_command(
         "dump2dcm",
         vec![
             OsStr::new("-g"),
@@ -37,5 +47,10 @@ pub fn dcm_xml_to_worklist(
         ],
         true,
     )?;
+    if !output3.status.success() {
+        let err_str = std::str::from_utf8(&output3.stderr).unwrap();
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(custom_error);
+    }
     return Ok(());
 }

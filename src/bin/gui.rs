@@ -1,11 +1,13 @@
 // use gtk4 as gtk;
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmTransferType};
+use gdt2dicom::gdt::{parse_file, GdtError};
 use gtk::gio::prelude::FileExt;
 use gtk::gio::ListStore;
 use gtk::prelude::*;
 use gtk::{
-    glib, Application, ApplicationWindow, Button, Entry, FileDialog, FileFilter, Grid, Label,
+    glib, AlertDialog, Application, ApplicationWindow, Button, Entry, FileDialog, FileFilter, Grid,
+    Label,
 };
 use std::path::{Path, PathBuf};
 
@@ -102,15 +104,37 @@ fn main() -> glib::ExitCode {
                             }
                         }
                     }
-                    eprintln!("Back from open");
+                    eprintln!("Back from save");
                 },
             );
         });
         grid_layout.attach(&output_button, 3, 1, 1, 1);
 
         let run_button = Button::builder().label("Run").build();
+        let input_entry4 = input_entry.clone();
+        let output_entry4 = output_entry.clone();
+        let w4 = window.clone();
         run_button.connect_clicked(move |_| {
-            // convert_gdt_file(&input_path, &output_path);
+            let input_text = input_entry4.buffer().text();
+            let output_text = output_entry4.buffer().text();
+            let input_path = Path::new(input_text.as_str());
+            let output_path = PathBuf::from(output_text.as_str());
+            let result = convert_gdt_file(&input_path, &output_path);
+            if let Err(err) = result {
+                AlertDialog::builder()
+                    .message("Error")
+                    .detail(err.to_string())
+                    .modal(true)
+                    .build()
+                    .show(Some(&w4));
+            } else {
+                AlertDialog::builder()
+                    .message("Success!")
+                    .detail("File written")
+                    .modal(true)
+                    .build()
+                    .show(Some(&w4));
+            }
         });
         grid_layout.attach(&run_button, 3, 2, 1, 1);
 
@@ -121,13 +145,13 @@ fn main() -> glib::ExitCode {
     return application.run();
 }
 
-fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) {
-    let gdt_file = gdt2dicom::gdt::parse_file(input_path).unwrap();
+fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtError> {
+    let gdt_file = parse_file(input_path)?;
     let dicom_xml_path: Option<PathBuf> = None;
     let xml_events = match dicom_xml_path {
         Some(p) => parse_dcm_xml(&p).expect("Expecting a good xml file."),
         _ => default_dcm_xml(DcmTransferType::LittleEndianExplicit),
     };
     let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
-    dcm_xml_to_worklist(&temp_file.path(), output_path);
+    return dcm_xml_to_worklist(&temp_file.path(), output_path).map_err(GdtError::IoError);
 }
