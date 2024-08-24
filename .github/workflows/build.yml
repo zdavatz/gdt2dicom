@@ -71,6 +71,57 @@ jobs:
             .\target\release\gui.exe
           retention-days: 5
 
+  build-windows-gui:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/mglolenstine/gtk4-cross:gtk-4.12
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install additional dependencies
+        # gio is for the build script
+        run: |
+          dnf install mingw64-poppler mingw64-poppler-glib mingw32-python3 rust-gio-devel adwaita-icon-theme wget gtk4-devel gcc vulkan -y && dnf clean all -y
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: x86_64-pc-windows-gnu
+      - name: Cache ~/.cargo
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: windows-dotcargo
+      - name: Cache cargo build
+        uses: actions/cache@v1
+        with:
+          path: target
+          key: windows-build-target
+      - name: Cross compile for Windows
+        run: |
+          #!/bin/bash
+          set -euo pipefail
+          export PKG_CONFIG_PATH=/usr/lib64/pkgconfig:/usr/share/pkgconfig:$MINGW_PREFIX/lib/pkgconfig/:/usr/x86_64-w64-mingw32/lib/pkgconfig/
+
+          cargo build --target=x86_64-pc-windows-gnu --release --locked --bin gui
+
+          mkdir -p package
+          cp target/x86_64-pc-windows-gnu/release/*.exe package/
+          # package/gui.exe
+      - name: Package
+        run: |
+          #!/bin/bash
+          set -euo pipefail
+
+          package
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-gui
+          path: |
+            ./package
+          if-no-files-found: error
+
   build-mac:
     runs-on: macos-latest
     steps:
