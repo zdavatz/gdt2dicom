@@ -2,6 +2,7 @@
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
+use gdt2dicom::worklist_conversion::WorklistConversion;
 use gtk::gio::prelude::FileExt;
 use gtk::gio::ListStore;
 use gtk::prelude::*;
@@ -11,6 +12,7 @@ use gtk::{
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 fn main() -> glib::ExitCode {
     let application = Application::builder()
@@ -142,7 +144,7 @@ fn main() -> glib::ExitCode {
         let separator = Separator::new(gtk::Orientation::Horizontal);
         grid_layout.attach(&separator, 0, 3, 4, 1);
 
-        setup_auto_convert_list_ui(&window.clone(), &grid_layout.clone());
+        setup_auto_convert_list_ui(&window.clone(), &grid_layout.clone(), 4);
 
         window.set_child(Some(&grid_layout));
         window.present();
@@ -162,59 +164,55 @@ fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtE
     return dcm_xml_to_worklist(&temp_file.path(), output_path).map_err(GdtError::IoError);
 }
 
-#[derive(Debug)]
-struct WorklistConversion {
-    input_path: Option<PathBuf>,
-    output_path: Option<PathBuf>,
-    aetitle: String,
-    modality: String,
-}
-
-impl WorklistConversion {
-    fn validate(&self) -> bool {
-        return true;
-    }
-}
-
-fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid) {
+fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
     let conversions: Arc<Mutex<Vec<WorklistConversion>>> = Arc::new(Mutex::new(vec![]));
 
     let conversation_scroll_window = ScrolledWindow::builder().height_request(400).build();
-    grid.attach(&conversation_scroll_window, 0, 4, 4, 1);
+    grid.attach(&conversation_scroll_window, 0, grid_y_index, 4, 1);
 
     let box1 = gtk::Box::new(gtk::Orientation::Vertical, 12);
     conversation_scroll_window.set_child(Some(&box1));
 
-    let new_convertion_button = Button::builder().label("Add new worklist").build();
+    let new_convertion_button = Button::builder().label("Add new worklist folder").build();
     let w2 = window.clone();
     new_convertion_button.connect_clicked(move |_| {
-        let mut cs = conversions.lock().unwrap();
-        let frame = Frame::new(Some("testing"));
-        frame.set_child(Some(&setup_auto_convert_ui(&w2.clone(), cs.len())));
+        // let mut cs = conversions.lock().unwrap();
+        let frame = Frame::new(Some("Worklist folder"));
+        let uuid = Uuid::new_v4();
+        let on_delete = || {};
+        frame.set_child(Some(&setup_auto_convert_ui(&w2.clone(), uuid, on_delete)));
         box1.append(&frame);
-        cs.push(WorklistConversion {
-            input_path: None,
-            output_path: None,
-            aetitle: "".to_string(),
-            modality: "".to_string(),
-        });
+        // cs.push();
     });
-    grid.attach(&new_convertion_button, 3, 5, 1, 1);
+    grid.attach(&new_convertion_button, 3, grid_y_index + 1, 1, 1);
+    return grid_y_index + 2;
 }
 
-fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
+fn setup_auto_convert_ui<F>(window: &ApplicationWindow, uuid: Uuid, on_delete: F) -> Grid
+where
+    F: Fn() + 'static,
+{
+    let worklist_conversion = Arc::new(Mutex::new(WorklistConversion {
+        uuid: uuid,
+        input_dir_path: None,
+        output_dir_path: None,
+        aetitle: "".to_string(),
+        modality: "".to_string(),
+    }));
     let input_file_label = Label::new(Some("Input File"));
-    let input_entry = Entry::new();
+    let input_entry = Entry::builder().sensitive(false).build();
     let input_button = Button::builder().label("Choose GDT file...").build();
 
     let output_file_label = Label::new(Some("Output File"));
-    let output_entry = Entry::new();
+    let output_entry = Entry::builder().sensitive(false).build();
     let output_button = Button::builder().label("Choose WL path...").build();
 
     let aetitle_label = Label::new(Some("AETitle"));
     let aetitle_entry = Entry::new();
     let modality_label = Label::new(Some("Modality"));
     let modality_entry = Entry::new();
+
+    let remove_button = Button::builder().label("Remove worklist folder").build();
 
     let grid_layout = Grid::builder()
         .column_spacing(12)
@@ -237,17 +235,17 @@ fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
     grid_layout.attach(&modality_label, 0, 3, 1, 1);
     grid_layout.attach(&modality_entry, 1, 3, 3, 1);
 
+    grid_layout.attach(&remove_button, 3, 4, 1, 1);
+
+    // TODO: update filter, select dir only
     let w2 = window.clone();
     let input_entry2 = input_entry.clone();
+    let wc1 = worklist_conversion.clone();
     input_button.connect_clicked(move |_| {
         let input_entry3 = input_entry2.clone();
-        let ff = FileFilter::new();
-        ff.add_suffix("gdt");
-
-        let filters = ListStore::new::<FileFilter>();
-        filters.append(&ff);
-        let dialog = FileDialog::builder().filters(&filters).build();
-        dialog.open(
+        let dialog = FileDialog::builder().build();
+        let wc2 = wc1.clone();
+        dialog.select_folder(
             Some(&w2),
             None::<gtk::gio::Cancellable>.as_ref(),
             move |result| {
@@ -259,6 +257,9 @@ fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
                         if let Some(input_path) = file.path() {
                             if let Some(p) = input_path.to_str() {
                                 input_entry3.buffer().set_text(p);
+                                if let std::sync::LockResult::Ok(mut wc) = wc2.lock() {
+                                    wc.input_dir_path = Some(PathBuf::from(p));
+                                }
                             }
                         }
                     }
@@ -270,15 +271,12 @@ fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
 
     let w3 = window.clone();
     let output_entry2 = output_entry.clone();
+    let wc3 = worklist_conversion.clone();
     output_button.connect_clicked(move |_| {
         let output_entry3 = output_entry2.clone();
-        let ff = FileFilter::new();
-        ff.add_suffix("wl");
-
-        let filters = ListStore::new::<FileFilter>();
-        filters.append(&ff);
-        let dialog = FileDialog::builder().filters(&filters).build();
-        dialog.save(
+        let dialog = FileDialog::builder().build();
+        let wc4 = wc3.clone();
+        dialog.select_folder(
             Some(&w3),
             None::<gtk::gio::Cancellable>.as_ref(),
             move |result| {
@@ -290,6 +288,9 @@ fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
                         if let Some(input_path) = file.path() {
                             if let Some(p) = input_path.to_str() {
                                 output_entry3.buffer().set_text(p);
+                                if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
+                                    wc.output_dir_path = Some(PathBuf::from(p));
+                                }
                             }
                         }
                     }
@@ -297,6 +298,10 @@ fn setup_auto_convert_ui(window: &ApplicationWindow, index: usize) -> Grid {
                 eprintln!("Back from save");
             },
         );
+    });
+
+    remove_button.connect_clicked(move |_| {
+        on_delete();
     });
 
     return grid_layout;
