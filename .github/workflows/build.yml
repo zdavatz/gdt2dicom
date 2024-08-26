@@ -68,59 +68,56 @@ jobs:
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
-            .\target\release\gui.exe
           retention-days: 5
-
-  build-windows-gui:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/mglolenstine/gtk4-cross:gtk-4.12
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install additional dependencies
-        # gio is for the build script
+      - name: Copy GUI dependencies
         run: |
-          dnf install mingw64-poppler mingw64-poppler-glib mingw32-python3 rust-gio-devel adwaita-icon-theme wget gtk4-devel gcc vulkan -y && dnf clean all -y
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          target: x86_64-pc-windows-gnu
-      - name: Cache ~/.cargo
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo
-          key: windows-dotcargo
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: windows-build-target
-      - name: Cross compile for Windows
-        run: |
-          #!/bin/bash
-          set -euo pipefail
-          export PKG_CONFIG_PATH=/usr/lib64/pkgconfig:/usr/share/pkgconfig:$MINGW_PREFIX/lib/pkgconfig/:/usr/x86_64-w64-mingw32/lib/pkgconfig/
+          mkdir gui-out
+          cp .\target\release\gui.exe ./gui-out/
+          git clone https://github.com/B00merang-Project/Windows-10.git
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-2.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/harfbuzz.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/fribidi-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-gobject-2.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/gdk_pixbuf-2.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/epoxy-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/zlib1.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/graphene-1.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/pangowin32-1.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/iconv.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/libpng16.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/tiff.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/jpeg62.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-script-interpreter-2.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/freetype-6.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/pixman-1-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/gio-2.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/glib-2.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/gobject-2.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/gtk-4-1.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/ffi-8.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/intl.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/pcre2-8-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/gmodule-2.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/pangocairo-1.0-0.dll ./gui-out/
+          cp C:/gtk-build/gtk/x64/release/bin/pango-1.0-0.dll ./gui-out/
+          mkdir -p ./gui-out/share/
+          cp -R C:/gtk-build/gtk/x64/release/share/locale ./gui-out/share/
+          cp -R C:/gtk-build/gtk/x64/release/share/thumbnailers ./gui-out/share/
+          cp -R C:/gtk-build/gtk/x64/release/share/glib-2.0 ./gui-out/share/
+          cp -R C:/gtk-build/gtk/x64/release/share/gtk-4.0 ./gui-out/share/
+          mkdir -p ./gui-out/share/themes/Windows10/
+          cp -R ./Windows-10/gtk-4.0 ./gui-out/share/themes/Windows10/
+          mkdir -p ./gui-out/etc/gtk-4.0/
+          echo '[Settings]' >> ./gui-out/etc/gtk-4.0/settings.ini
+          echo 'gtk-theme-name=Windows10' >> ./gui-out/etc/gtk-4.0/settings.ini
+          echo 'gtk-font-name=Segoe UI 9' >> ./gui-out/etc/gtk-4.0/settings.ini
 
-          cargo build --target=x86_64-pc-windows-gnu --release --locked --bin gui
-
-          mkdir -p package
-          cp target/x86_64-pc-windows-gnu/release/*.exe package/
-          # package/gui.exe
-      - name: Package
-        run: |
-          #!/bin/bash
-          set -euo pipefail
-
-          package
-
-      - name: Upload artifacts
+      - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
-          name: windows-gui
+          name: GUI out
           path: |
-            ./package
-          if-no-files-found: error
+            .\gui-out
 
   build-mac:
     runs-on: macos-latest

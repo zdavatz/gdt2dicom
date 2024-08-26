@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 // use gtk4 as gtk;
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmTransferType};
