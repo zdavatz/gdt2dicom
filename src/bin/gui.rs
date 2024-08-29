@@ -13,17 +13,16 @@ use gtk::{
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 fn main() -> glib::ExitCode {
     let application = Application::builder()
-        .application_id("com.example.FirstGtkApp")
+        .application_id("ch.ywesee.gdt2dicom")
         .build();
 
     application.connect_activate(|app| {
         let window = ApplicationWindow::builder()
             .application(app)
-            .title("First GTK Program")
+            .title("gdt2dicom")
             .default_width(350)
             .default_height(70)
             .build();
@@ -179,9 +178,9 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     new_convertion_button.connect_clicked(move |_| {
         // let mut cs = conversions.lock().unwrap();
         let frame = Frame::new(Some("Worklist folder"));
-        let uuid = Uuid::new_v4();
         let on_delete = || {};
-        frame.set_child(Some(&setup_auto_convert_ui(&w2.clone(), uuid, on_delete)));
+        let this_ui = setup_auto_convert_ui(&w2.clone(), on_delete);
+        frame.set_child(Some(&this_ui));
         box1.append(&frame);
         // cs.push();
     });
@@ -189,17 +188,11 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     return grid_y_index + 2;
 }
 
-fn setup_auto_convert_ui<F>(window: &ApplicationWindow, uuid: Uuid, on_delete: F) -> Grid
+fn setup_auto_convert_ui<F>(window: &ApplicationWindow, on_delete: F) -> Grid
 where
     F: Fn() + 'static,
 {
-    let worklist_conversion = Arc::new(Mutex::new(WorklistConversion {
-        uuid: uuid,
-        input_dir_path: None,
-        output_dir_path: None,
-        aetitle: "".to_string(),
-        modality: "".to_string(),
-    }));
+    let worklist_conversion = Arc::new(Mutex::new(WorklistConversion::new()));
     let input_file_label = Label::new(Some("Input File"));
     let input_entry = Entry::builder().sensitive(false).build();
     let input_button = Button::builder().label("Choose GDT file...").build();
@@ -259,7 +252,8 @@ where
                             if let Some(p) = input_path.to_str() {
                                 input_entry3.buffer().set_text(p);
                                 if let std::sync::LockResult::Ok(mut wc) = wc2.lock() {
-                                    wc.input_dir_path = Some(PathBuf::from(p));
+                                    let wc3 = wc2.clone();
+                                    wc.set_input_dir_path(Some(PathBuf::from(p)), wc3);
                                 }
                             }
                         }
