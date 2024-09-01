@@ -178,7 +178,11 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     new_convertion_button.connect_clicked(move |_| {
         // let mut cs = conversions.lock().unwrap();
         let frame = Frame::new(Some("Worklist folder"));
-        let on_delete = || {};
+        let f = frame.clone();
+        let box2 = box1.clone();
+        let on_delete = move || {
+            box2.remove(&f);
+        };
         let this_ui = setup_auto_convert_ui(&w2.clone(), on_delete);
         frame.set_child(Some(&this_ui));
         box1.append(&frame);
@@ -295,8 +299,12 @@ where
         );
     });
 
+    let wc4 = worklist_conversion.clone();
     remove_button.connect_clicked(move |_| {
         on_delete();
+        if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
+            wc.unwatch_input_dir();
+        }
     });
 
     return grid_layout;

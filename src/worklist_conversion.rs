@@ -58,6 +58,13 @@ impl WorklistConversion {
         }
     }
 
+    pub fn unwatch_input_dir(&mut self) {
+        if let Some((current_path, w)) = &mut self.input_watcher {
+            w.unwatch(&current_path.as_path());
+            println!("Unwatching {:?}", &current_path);
+            self.input_watcher = None;
+        }
+    }
 
     pub fn scan_folder(&self) -> std::io::Result<()> {
         if let (Some((input_dir_path, _)), Some(output_dir_path)) =
