@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,16 @@ pub enum DcmError {
     IoError(std::io::Error),
     XmlReaderError(xml::reader::Error),
     XmlWriterError(xml::writer::Error),
+}
+
+impl fmt::Display for DcmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DcmError::IoError(e) => write!(f, "IO: {}", e),
+            DcmError::XmlReaderError(e) => write!(f, "XmlReaderError: {}", e),
+            DcmError::XmlWriterError(e) => write!(f, "XmlWriterError: {}", e),
+        }
+    }
 }
 
 pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
