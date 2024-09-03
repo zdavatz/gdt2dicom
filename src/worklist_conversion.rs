@@ -1,12 +1,16 @@
 use notify::{recommended_watcher, Event, EventHandler, RecursiveMode, Watcher};
+use std::convert::From;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::{create_dir, read_dir, rename};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
-use uuid::Uuid;
+use tempfile::NamedTempFile;
 
-use crate::dcm_worklist::dcm_xml_to_worklist;
-use crate::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmError, DcmTransferType};
+use crate::command::exec_command;
+use crate::dcm_worklist::{dcm_to_worklist, dcm_xml_to_worklist};
+use crate::dcm_xml::{default_dcm_xml, file_to_xml, DcmError, DcmTransferType};
 use crate::gdt::{parse_file, GdtError};
 
 #[derive(Debug)]
@@ -28,24 +32,45 @@ impl fmt::Display for WorklistError {
     }
 }
 
+impl From<std::io::Error> for WorklistError {
+    fn from(error: std::io::Error) -> Self {
+        WorklistError::IoError(error)
+    }
+}
+
+impl From<DcmError> for WorklistError {
+    fn from(error: DcmError) -> Self {
+        WorklistError::DcmError(error)
+    }
+}
+
+impl From<GdtError> for WorklistError {
+    fn from(error: GdtError) -> Self {
+        WorklistError::GdtError(error)
+    }
+}
+
+impl From<notify::Error> for WorklistError {
+    fn from(error: notify::Error) -> Self {
+        WorklistError::NotifyError(error)
+    }
+}
+
 pub struct WorklistConversion {
-    pub uuid: Uuid,
     input_watcher: Option<(PathBuf, Box<dyn Watcher + Send>)>,
     pub output_dir_path: Option<PathBuf>,
-    pub aetitle: String,
-    pub modality: String,
-    pub log_sender: mpsc::Sender<String>,
+    aetitle: Option<String>,
+    modality: Option<String>,
+    log_sender: mpsc::Sender<String>,
 }
 
 impl WorklistConversion {
     pub fn new(log_sender: mpsc::Sender<String>) -> WorklistConversion {
-        let uuid = Uuid::new_v4();
         return WorklistConversion {
-            uuid: uuid,
             input_watcher: None,
             output_dir_path: None,
-            aetitle: "".to_string(),
-            modality: "".to_string(),
+            aetitle: None,
+            modality: None,
             log_sender: log_sender,
         };
     }
@@ -73,9 +98,8 @@ impl WorklistConversion {
             let handler = FSEventHandler {
                 conversion: self_arc,
             };
-            let mut w = recommended_watcher(handler).map_err(WorklistError::NotifyError)?;
-            w.watch(&new_path.as_path(), RecursiveMode::NonRecursive)
-                .map_err(WorklistError::NotifyError)?;
+            let mut w = recommended_watcher(handler)?;
+            w.watch(&new_path.as_path(), RecursiveMode::NonRecursive)?;
             self.input_watcher = Some((new_path, Box::new(w)));
         } else {
             self.input_watcher = None;
@@ -91,6 +115,22 @@ impl WorklistConversion {
         }
     }
 
+    pub fn set_aetitle_string(&mut self, value: String) {
+        if value.len() == 0 {
+            self.aetitle = None;
+        } else {
+            self.aetitle = Some(value);
+        }
+    }
+
+    pub fn set_modality_string(&mut self, value: String) {
+        if value.len() == 0 {
+            self.modality = None;
+        } else {
+            self.modality = Some(value);
+        }
+    }
+
     pub fn scan_folder(&self) -> Result<(), WorklistError> {
         if let (Some((input_dir_path, _)), Some(output_dir_path)) =
             (&self.input_watcher, &self.output_dir_path)
@@ -102,13 +142,13 @@ impl WorklistConversion {
                     _ = self
                         .log_sender
                         .send(format!("Creating processed folder at: {}", &p.display()));
-                    create_dir(&p).map_err(WorklistError::IoError)?;
+                    create_dir(&p)?;
                 }
                 p
             };
-            let entries = read_dir(&input_dir_path).map_err(WorklistError::IoError)?;
+            let entries = read_dir(&input_dir_path)?;
             for entry in entries {
-                let entry = entry.map_err(WorklistError::IoError)?;
+                let entry = entry?;
                 let path = entry.path();
                 if path.is_file() {
                     if path.extension().map(|s| s == "gdt").unwrap_or(false) {
@@ -116,13 +156,20 @@ impl WorklistConversion {
                         let mut out_file_path = output_dir_path.clone();
                         out_file_path.push(&filename);
                         out_file_path.set_extension("wl");
-                        convert_gdt_file(&path.as_path(), &out_file_path)?;
+                        convert_gdt_file(
+                            &path.as_path(),
+                            &out_file_path,
+                            &self.aetitle,
+                            &self.modality,
+                        )?;
 
                         let mut processed_path = processed_folder.clone();
                         processed_path.push(&filename);
-                        rename(&path, processed_path).map_err(WorklistError::IoError)?;
+                        rename(&path, processed_path)?;
                     } else {
-                        // warn
+                        _ = self
+                            .log_sender
+                            .send(format!("Found non-GDT file, ignored: {}", path.display()));
                     }
                 }
             }
@@ -152,7 +199,7 @@ impl EventHandler for FSEventHandler {
                                 Err(err) => {
                                     _ = c.log_sender.send(format!("Scan error {:?}", err));
                                 }
-                                Ok(_) => {}
+                                Ok(()) => {}
                             }
                         }
                     }
@@ -165,13 +212,83 @@ impl EventHandler for FSEventHandler {
     }
 }
 
-fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), WorklistError> {
-    let gdt_file = parse_file(input_path).map_err(WorklistError::GdtError)?;
-    let dicom_xml_path: Option<PathBuf> = None;
-    let xml_events = match dicom_xml_path {
-        Some(p) => parse_dcm_xml(&p).map_err(WorklistError::DcmError)?,
-        _ => default_dcm_xml(DcmTransferType::LittleEndianExplicit),
-    };
-    let temp_file = file_to_xml(gdt_file, &xml_events).map_err(WorklistError::DcmError)?;
-    return dcm_xml_to_worklist(&temp_file.path(), output_path).map_err(WorklistError::IoError);
+fn convert_gdt_file(
+    input_path: &Path,
+    output_path: &PathBuf,
+    aetitle: &Option<String>,
+    modality: &Option<String>,
+) -> Result<(), WorklistError> {
+    let gdt_file = parse_file(input_path)?;
+    let xml_events = default_dcm_xml(DcmTransferType::LittleEndianExplicit);
+    let temp_file = file_to_xml(gdt_file, &xml_events)?;
+    let path = temp_file.path();
+
+    if aetitle.is_some() || modality.is_some() {
+        let dcm_file = modify_dcm_file(aetitle, modality, &path)?;
+        return Ok(dcm_to_worklist(&dcm_file.path(), output_path)?);
+    } else {
+        println!("temp_file {:?}", &path);
+        return Ok(dcm_xml_to_worklist(&path, output_path)?);
+    }
+}
+
+fn modify_dcm_file(
+    aetitle: &Option<String>,
+    modality: &Option<String>,
+    xml_file_path: &Path,
+) -> Result<NamedTempFile, WorklistError> {
+    // This function is same as this bash:
+    // $ xml2dcm [xml_file_path] [temp1]
+    // $ dcmodify -i "0032,1060=MODALITY"
+    // $ dcmodify -i "0032,1060=AETITLE"
+    let temp_dcm_file = NamedTempFile::new()?;
+    let temp_dcm_file_path = temp_dcm_file.path();
+    let output1 = exec_command(
+        "xml2dcm",
+        vec![xml_file_path.as_os_str(), temp_dcm_file_path.as_os_str()],
+        true,
+    )?;
+    if !output1.status.success() {
+        let err_str = std::str::from_utf8(&output1.stderr).unwrap();
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(WorklistError::IoError(custom_error));
+    }
+
+    if let Some(aetitle) = aetitle {
+        // TODO: log to channel
+        let output2 = exec_command(
+            "dcmodify",
+            vec![
+                OsStr::new("-i"),
+                OsStr::new(&format!("0032,1060={}", aetitle)),
+                temp_dcm_file_path.as_os_str(),
+            ],
+            true,
+        )?;
+        if !output2.status.success() {
+            let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+            let custom_error = Error::new(ErrorKind::Other, err_str);
+            return Err(WorklistError::IoError(custom_error));
+        }
+    }
+
+    if let Some(modality) = modality {
+        let output3 = exec_command(
+            "dcmodify",
+            vec![
+                OsStr::new("-i"),
+                OsStr::new(&format!("(0040,0100)[0].(0008,0060)={}", modality)),
+                temp_dcm_file_path.as_os_str(),
+            ],
+            true,
+        )?;
+        // TODO: log to channel
+        if !output3.status.success() {
+            let err_str = std::str::from_utf8(&output3.stderr).unwrap();
+            let custom_error = Error::new(ErrorKind::Other, err_str);
+            return Err(WorklistError::IoError(custom_error));
+        }
+    }
+
+    return Ok(temp_dcm_file);
 }

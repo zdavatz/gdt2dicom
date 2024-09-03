@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
-use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, parse_dcm_xml, DcmTransferType};
+use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
 use gdt2dicom::worklist_conversion::WorklistConversion;
 use gtk::gio::prelude::FileExt;
@@ -73,20 +73,17 @@ fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i
         dialog.open(
             Some(&w2),
             None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| {
-                match result {
-                    Err(err) => {
-                        println!("err {:?}", err);
-                    }
-                    Ok(file) => {
-                        if let Some(input_path) = file.path() {
-                            if let Some(p) = input_path.to_str() {
-                                input_entry3.buffer().set_text(p);
-                            }
+            move |result| match result {
+                Err(err) => {
+                    println!("err {:?}", err);
+                }
+                Ok(file) => {
+                    if let Some(input_path) = file.path() {
+                        if let Some(p) = input_path.to_str() {
+                            input_entry3.buffer().set_text(p);
                         }
                     }
                 }
-                eprintln!("Back from open");
             },
         );
     });
@@ -107,20 +104,17 @@ fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i
         dialog.save(
             Some(&w3),
             None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| {
-                match result {
-                    Err(err) => {
-                        println!("err {:?}", err);
-                    }
-                    Ok(file) => {
-                        if let Some(input_path) = file.path() {
-                            if let Some(p) = input_path.to_str() {
-                                output_entry3.buffer().set_text(p);
-                            }
+            move |result| match result {
+                Err(err) => {
+                    println!("err {:?}", err);
+                }
+                Ok(file) => {
+                    if let Some(input_path) = file.path() {
+                        if let Some(p) = input_path.to_str() {
+                            output_entry3.buffer().set_text(p);
                         }
                     }
                 }
-                eprintln!("Back from save");
             },
         );
     });
@@ -162,11 +156,7 @@ fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i
 
 fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtError> {
     let gdt_file = parse_file(input_path)?;
-    let dicom_xml_path: Option<PathBuf> = None;
-    let xml_events = match dicom_xml_path {
-        Some(p) => parse_dcm_xml(&p).expect("Expecting a good xml file."),
-        _ => default_dcm_xml(DcmTransferType::LittleEndianExplicit),
-    };
+    let xml_events = default_dcm_xml(DcmTransferType::LittleEndianExplicit);
     let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
     return dcm_xml_to_worklist(&temp_file.path(), output_path).map_err(GdtError::IoError);
 }
@@ -267,35 +257,32 @@ where
         dialog.select_folder(
             Some(&w2),
             None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| {
-                match result {
-                    Err(err) => {
-                        println!("err {:?}", err);
-                    }
-                    Ok(file) => {
-                        if let Some(input_path) = file.path() {
-                            if let Some(p) = input_path.to_str() {
-                                input_entry3.buffer().set_text(p);
-                                if let std::sync::LockResult::Ok(mut wc) = wc2.lock() {
-                                    let wc3 = wc2.clone();
-                                    let result = wc.set_input_dir_path(Some(PathBuf::from(p)), wc3);
-                                    match result {
-                                        Ok(()) => {}
-                                        Err(err) => {
-                                            AlertDialog::builder()
-                                                .message("Error")
-                                                .detail(err.to_string())
-                                                .modal(true)
-                                                .build()
-                                                .show(Some(&w3));
-                                        }
+            move |result| match result {
+                Err(err) => {
+                    println!("err {:?}", err);
+                }
+                Ok(file) => {
+                    if let Some(input_path) = file.path() {
+                        if let Some(p) = input_path.to_str() {
+                            input_entry3.buffer().set_text(p);
+                            if let std::sync::LockResult::Ok(mut wc) = wc2.lock() {
+                                let wc3 = wc2.clone();
+                                let result = wc.set_input_dir_path(Some(PathBuf::from(p)), wc3);
+                                match result {
+                                    Ok(()) => {}
+                                    Err(err) => {
+                                        AlertDialog::builder()
+                                            .message("Error")
+                                            .detail(err.to_string())
+                                            .modal(true)
+                                            .build()
+                                            .show(Some(&w3));
                                     }
                                 }
                             }
                         }
                     }
                 }
-                eprintln!("Back from open");
             },
         );
     });
@@ -310,31 +297,46 @@ where
         dialog.select_folder(
             Some(&w3),
             None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| {
-                match result {
-                    Err(err) => {
-                        println!("err {:?}", err);
-                    }
-                    Ok(file) => {
-                        if let Some(input_path) = file.path() {
-                            if let Some(p) = input_path.to_str() {
-                                output_entry3.buffer().set_text(p);
-                                if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
-                                    wc.output_dir_path = Some(PathBuf::from(p));
-                                }
+            move |result| match result {
+                Err(err) => {
+                    println!("err {:?}", err);
+                }
+                Ok(file) => {
+                    if let Some(input_path) = file.path() {
+                        if let Some(p) = input_path.to_str() {
+                            output_entry3.buffer().set_text(p);
+                            if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
+                                wc.output_dir_path = Some(PathBuf::from(p));
                             }
                         }
                     }
                 }
-                eprintln!("Back from save");
             },
         );
     });
 
     let wc4 = worklist_conversion.clone();
+    let ae = aetitle_entry.clone();
+    aetitle_entry.connect_changed(move |_| {
+        if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
+            let text = ae.buffer().text().as_str().to_string();
+            wc.set_aetitle_string(text);
+        }
+    });
+
+    let wc5 = worklist_conversion.clone();
+    let modality = modality_entry.clone();
+    modality_entry.connect_changed(move |_| {
+        if let std::sync::LockResult::Ok(mut wc) = wc5.lock() {
+            let text = modality.buffer().text().as_str().to_string();
+            wc.set_modality_string(text);
+        }
+    });
+
+    let wc6 = worklist_conversion.clone();
     remove_button.connect_clicked(move |_| {
         on_delete();
-        if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
+        if let std::sync::LockResult::Ok(mut wc) = wc6.lock() {
             wc.unwatch_input_dir();
         }
     });
