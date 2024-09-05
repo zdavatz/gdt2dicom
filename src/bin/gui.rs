@@ -8,11 +8,11 @@ use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
 use gdt2dicom::worklist_conversion::WorklistConversion;
 use gtk::gio::prelude::FileExt;
-use gtk::gio::ListStore;
+use gtk::gio::{ActionEntry, ListStore, Menu};
 use gtk::prelude::*;
 use gtk::{
-    glib, AlertDialog, Application, ApplicationWindow, Button, Entry, FileDialog, FileFilter,
-    Frame, Grid, Label, ScrolledWindow, Separator,
+    glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, FileDialog,
+    FileFilter, Frame, Grid, Label, ScrolledWindow, Separator,
 };
 
 fn main() -> glib::ExitCode {
@@ -21,12 +21,27 @@ fn main() -> glib::ExitCode {
         .build();
 
     application.connect_activate(|app| {
+        let menubar = Menu::new();
+
+        let file_menu = Menu::new();
+        file_menu.append(Some("About"), Some("win.open-about"));
+        menubar.append_submenu(Some("Help"), &file_menu);
+        app.set_menubar(Some(&menubar));
+
         let window = ApplicationWindow::builder()
             .application(app)
             .title("gdt2dicom")
             .default_width(350)
             .default_height(70)
+            .show_menubar(true)
             .build();
+
+        let action_close = ActionEntry::builder("open-about")
+            .activate(|window: &ApplicationWindow, _, _| {
+                open_about_dialog();
+            })
+            .build();
+        window.add_action_entries([action_close]);
 
         let grid_layout = Grid::builder()
             .column_spacing(12)
@@ -45,6 +60,21 @@ fn main() -> glib::ExitCode {
     });
 
     return application.run();
+}
+
+fn open_about_dialog() {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let license_str = include_str!("../../LICENSE");
+    let credits = "Credit: Windows-10 theme (https://github.com/B00merang-Project/Windows-10) is bundled with the windows build.\n\n\n\n".to_string();
+    let a = AboutDialog::builder()
+        .title("About gdt2dicom")
+        .program_name("gdt2dicom")
+        .license(credits + license_str)
+        .wrap_license(true)
+        .version(VERSION)
+        .website("https://github.com/zdavatz/gdt2dicom")
+        .build();
+    a.set_visible(true);
 }
 
 fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
