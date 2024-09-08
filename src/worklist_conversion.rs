@@ -101,6 +101,7 @@ impl WorklistConversion {
             let mut w = recommended_watcher(handler)?;
             w.watch(&new_path.as_path(), RecursiveMode::NonRecursive)?;
             self.input_watcher = Some((new_path, Box::new(w)));
+            self.scan_folder();
         } else {
             self.input_watcher = None;
         }
@@ -187,7 +188,8 @@ impl EventHandler for FSEventHandler {
         if let Ok(event) = event {
             // println!("Event: {:?}", &event);
             match event.kind {
-                notify::event::EventKind::Create(notify::event::CreateKind::File) => {
+                notify::event::EventKind::Create(notify::event::CreateKind::File)
+                | notify::event::EventKind::Create(notify::event::CreateKind::Any) => {
                     if let std::sync::LockResult::Ok(c) = self.conversion.lock() {
                         if event
                             .paths
@@ -201,6 +203,10 @@ impl EventHandler for FSEventHandler {
                                 }
                                 Ok(()) => {}
                             }
+                        } else {
+                            _ = c
+                                .log_sender
+                                .send("Not processing: unrecognised extension.".to_string());
                         }
                     }
                 }
