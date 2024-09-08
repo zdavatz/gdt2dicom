@@ -72,7 +72,6 @@ fn open_about_dialog() {
         .license(credits + license_str)
         .wrap_license(true)
         .version(VERSION)
-        .website("https://github.com/zdavatz/gdt2dicom")
         .build();
     a.set_visible(true);
 }

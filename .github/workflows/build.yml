@@ -43,21 +43,20 @@ jobs:
           retention-days: 5
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
       - name: Install dependencies
         run: |
           choco install msys2 visualstudio2022-workload-vctools python312 pkgconfiglite gtk-runtime
-          py -3.12 -m pip install --user pipx
-          py -3.12 -m pipx ensurepath
-          pipx install gvsbuild
-          gvsbuild build gtk4
+          curl -L -o "C:\gtk.zip" https://github.com/wingtk/gvsbuild/releases/download/2024.9.0/GTK4_Gvsbuild_2024.9.0_x64.zip
+          mkdir "C:\gtk"
+          unzip "C:\gtk.zip" -d "C:\gtk"
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk-build/gtk/x64/release/lib/pkgconfig"
+          $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk/lib/pkgconfig"
           cargo build --verbose --release
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
@@ -74,37 +73,37 @@ jobs:
           mkdir gui-out
           cp .\target\release\gui.exe ./gui-out/
           git clone https://github.com/B00merang-Project/Windows-10.git
-          cp C:/gtk-build/gtk/x64/release/bin/cairo-2.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/harfbuzz.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/fribidi-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/cairo-gobject-2.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/gdk_pixbuf-2.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/epoxy-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/zlib1.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/graphene-1.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/pangowin32-1.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/iconv.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/libpng16.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/tiff.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/jpeg62.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/cairo-script-interpreter-2.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/freetype-6.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/pixman-1-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/gio-2.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/glib-2.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/gobject-2.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/gtk-4-1.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/ffi-8.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/intl.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/pcre2-8-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/gmodule-2.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/pangocairo-1.0-0.dll ./gui-out/
-          cp C:/gtk-build/gtk/x64/release/bin/pango-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/cairo-2.dll ./gui-out/
+          cp C:/gtk/bin/harfbuzz.dll ./gui-out/
+          cp C:/gtk/bin/fribidi-0.dll ./gui-out/
+          cp C:/gtk/bin/cairo-gobject-2.dll ./gui-out/
+          cp C:/gtk/bin/gdk_pixbuf-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/epoxy-0.dll ./gui-out/
+          cp C:/gtk/bin/zlib1.dll ./gui-out/
+          cp C:/gtk/bin/graphene-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pangowin32-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/iconv.dll ./gui-out/
+          cp C:/gtk/bin/libpng16.dll ./gui-out/
+          cp C:/gtk/bin/tiff.dll ./gui-out/
+          cp C:/gtk/bin/jpeg62.dll ./gui-out/
+          cp C:/gtk/bin/cairo-script-interpreter-2.dll ./gui-out/
+          cp C:/gtk/bin/freetype-6.dll ./gui-out/
+          cp C:/gtk/bin/pixman-1-0.dll ./gui-out/
+          cp C:/gtk/bin/gio-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/glib-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/gobject-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/gtk-4-1.dll ./gui-out/
+          cp C:/gtk/bin/ffi-8.dll ./gui-out/
+          cp C:/gtk/bin/intl.dll ./gui-out/
+          cp C:/gtk/bin/pcre2-8-0.dll ./gui-out/
+          cp C:/gtk/bin/gmodule-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pangocairo-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pango-1.0-0.dll ./gui-out/
           mkdir -p ./gui-out/share/
-          cp -R C:/gtk-build/gtk/x64/release/share/locale ./gui-out/share/
-          cp -R C:/gtk-build/gtk/x64/release/share/thumbnailers ./gui-out/share/
-          cp -R C:/gtk-build/gtk/x64/release/share/glib-2.0 ./gui-out/share/
-          cp -R C:/gtk-build/gtk/x64/release/share/gtk-4.0 ./gui-out/share/
+          cp -R C:/gtk/share/locale ./gui-out/share/
+          cp -R C:/gtk/share/thumbnailers ./gui-out/share/
+          cp -R C:/gtk/share/glib-2.0 ./gui-out/share/
+          cp -R C:/gtk/share/gtk-4.0 ./gui-out/share/
           mkdir -p ./gui-out/share/themes/Windows10/
           cp -R ./Windows-10/gtk-4.0 ./gui-out/share/themes/Windows10/
           mkdir -p ./gui-out/etc/gtk-4.0/
@@ -115,7 +114,7 @@ jobs:
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
-          name: GUI out
+          name: Windows GUI
           path: |
             .\gui-out
 
