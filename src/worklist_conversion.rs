@@ -102,7 +102,7 @@ impl WorklistConversion {
             let mut w = recommended_watcher(handler)?;
             w.watch(&new_path.as_path(), RecursiveMode::NonRecursive)?;
             self.input_watcher = Some((new_path, Box::new(w)));
-            self.scan_folder();
+            self.scan_folder()?;
         } else {
             self.input_watcher = None;
         }
@@ -154,6 +154,9 @@ impl WorklistConversion {
                 let path = entry.path();
                 if path.is_file() {
                     if path.extension().map(|s| s == "gdt").unwrap_or(false) {
+                        _ = self
+                            .log_sender
+                            .send(format!("Processing GDT file: {}", &path.display()));
                         let filename = &path.file_name().unwrap().to_str().unwrap();
                         let mut out_file_path = output_dir_path.clone();
                         out_file_path.push(&filename);
@@ -201,11 +204,8 @@ impl EventHandler for FSEventHandler {
                             #[cfg(target_os = "windows")]
                             std::thread::sleep(Duration::from_secs(1));
                             let result = c.scan_folder();
-                            match result {
-                                Err(err) => {
-                                    _ = c.log_sender.send(format!("Scan error {:?}", err));
-                                }
-                                Ok(()) => {}
+                            if let Err(err) = result {
+                                _ = c.log_sender.send(format!("Scan error {:?}", err));
                             }
                         } else {
                             _ = c

@@ -2,19 +2,18 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
 
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
 use gdt2dicom::worklist_conversion::WorklistConversion;
 use gtk::gio::prelude::FileExt;
-use gtk::gio::{spawn_blocking, ActionEntry, ListStore, Menu};
+use gtk::gio::{ActionEntry, ListStore, Menu};
 use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
 use gtk::{
-    glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, FileDialog,
-    FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
+    glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, Expander,
+    FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
 };
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
@@ -41,7 +40,7 @@ fn main() -> glib::ExitCode {
             .build();
 
         let action_close = ActionEntry::builder("open-about")
-            .activate(|window: &ApplicationWindow, _, _| {
+            .activate(|_window: &ApplicationWindow, _, _| {
                 open_about_dialog();
             })
             .build();
@@ -251,6 +250,17 @@ where
     let modality_entry = Entry::builder().hexpand(true).build();
 
     let log_text_view = TextView::builder().build();
+    let log_scroll_window = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .height_request(100)
+        .child(&log_text_view)
+        .build();
+    let log_expander = Expander::builder()
+        .label("Logs")
+        .resize_toplevel(true)
+        .child(&log_scroll_window)
+        .build();
 
     let remove_button = Button::builder()
         .width_request(100)
@@ -279,7 +289,7 @@ where
     grid_layout.attach(&modality_label, 0, 3, 1, 1);
     grid_layout.attach(&modality_entry, 1, 3, 3, 1);
 
-    grid_layout.attach(&log_text_view, 0, 4, 4, 1);
+    grid_layout.attach(&log_expander, 0, 4, 4, 1);
     grid_layout.attach(&remove_button, 3, 5, 1, 1);
 
     let w2 = window.clone();
@@ -372,11 +382,11 @@ where
     let (asender, arecv) = async_channel::unbounded();
     runtime().spawn(async move {
         while let Ok(msg) = receiver.recv() {
-            asender.send(msg).await;
+            _ = asender.send(msg).await;
         }
     });
 
-    glib::spawn_future_local(clone!(
+    spawn_future_local(clone!(
         #[weak]
         log_text_view,
         async move {
