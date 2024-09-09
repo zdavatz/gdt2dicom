@@ -274,7 +274,7 @@ where
     let exe = exe_path.into();
     let exe_path_str = exe.to_string_lossy();
     info!("Sending ini to {:?}", &exe_path_str);
-    exec_command(&exe_path_str, vec![ini_path.clone()], true)?;
+    exec_command(&exe_path_str, vec![ini_path.clone()], true, None)?;
     let result = wait_for_ready(&ini_path, section_name, allow_fail, keep_file);
     return Ok(result);
 }

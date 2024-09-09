@@ -7,18 +7,29 @@ on:
 
 jobs:
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install libgtk-4-dev build-essential
+          pkg-config --modversion gtk4
+          pkg-config --cflags gtk4
+          pkg-config --libs gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
+          cargo fmt --check
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -28,17 +39,25 @@ jobs:
             ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
             ./target/x86_64-unknown-linux-gnu/release/gdt2opp
             ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
+            ./target/x86_64-unknown-linux-gnu/release/gui
           retention-days: 5
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          choco install msys2 visualstudio2022-workload-vctools python312 pkgconfiglite gtk-runtime
+          curl -L -o "C:\gtk.zip" https://github.com/wingtk/gvsbuild/releases/download/2024.9.0/GTK4_Gvsbuild_2024.9.0_x64.zip
+          mkdir "C:\gtk"
+          unzip "C:\gtk.zip" -d "C:\gtk"
       - name: Build
         run: |
           cd ${{ github.workspace }}
-          cargo build --release
+          $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk/lib/pkgconfig"
+          cargo build --verbose --release
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -49,12 +68,64 @@ jobs:
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
           retention-days: 5
+      - name: Copy GUI dependencies
+        run: |
+          mkdir gui-out
+          cp .\target\release\gui.exe ./gui-out/
+          git clone https://github.com/B00merang-Project/Windows-10.git
+          cp C:/gtk/bin/cairo-2.dll ./gui-out/
+          cp C:/gtk/bin/harfbuzz.dll ./gui-out/
+          cp C:/gtk/bin/fribidi-0.dll ./gui-out/
+          cp C:/gtk/bin/cairo-gobject-2.dll ./gui-out/
+          cp C:/gtk/bin/gdk_pixbuf-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/epoxy-0.dll ./gui-out/
+          cp C:/gtk/bin/zlib1.dll ./gui-out/
+          cp C:/gtk/bin/graphene-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pangowin32-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/iconv.dll ./gui-out/
+          cp C:/gtk/bin/libpng16.dll ./gui-out/
+          cp C:/gtk/bin/tiff.dll ./gui-out/
+          cp C:/gtk/bin/jpeg62.dll ./gui-out/
+          cp C:/gtk/bin/cairo-script-interpreter-2.dll ./gui-out/
+          cp C:/gtk/bin/freetype-6.dll ./gui-out/
+          cp C:/gtk/bin/pixman-1-0.dll ./gui-out/
+          cp C:/gtk/bin/gio-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/glib-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/gobject-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/gtk-4-1.dll ./gui-out/
+          cp C:/gtk/bin/ffi-8.dll ./gui-out/
+          cp C:/gtk/bin/intl.dll ./gui-out/
+          cp C:/gtk/bin/pcre2-8-0.dll ./gui-out/
+          cp C:/gtk/bin/gmodule-2.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pangocairo-1.0-0.dll ./gui-out/
+          cp C:/gtk/bin/pango-1.0-0.dll ./gui-out/
+          mkdir -p ./gui-out/share/
+          cp -R C:/gtk/share/locale ./gui-out/share/
+          cp -R C:/gtk/share/thumbnailers ./gui-out/share/
+          cp -R C:/gtk/share/glib-2.0 ./gui-out/share/
+          cp -R C:/gtk/share/gtk-4.0 ./gui-out/share/
+          mkdir -p ./gui-out/share/themes/Windows10/
+          cp -R ./Windows-10/gtk-4.0 ./gui-out/share/themes/Windows10/
+          mkdir -p ./gui-out/etc/gtk-4.0/
+          echo '[Settings]' >> ./gui-out/etc/gtk-4.0/settings.ini
+          echo 'gtk-theme-name=Windows10' >> ./gui-out/etc/gtk-4.0/settings.ini
+          echo 'gtk-font-name=Segoe UI 9' >> ./gui-out/etc/gtk-4.0/settings.ini
+
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v3
+        with:
+          name: Windows GUI
+          path: |
+            .\gui-out
 
   build-mac:
     runs-on: macos-latest
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          brew install gtk4
       - name: Build
         run: |
           cd ${{ github.workspace }}
@@ -62,7 +133,7 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
+          cargo fmt --check
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -72,4 +143,5 @@ jobs:
             ./target/release/dicom2gdt
             ./target/release/gdt2opp
             ./target/release/gdt2vdds
+            ./target/release/gui
           retention-days: 5

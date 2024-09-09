@@ -72,7 +72,7 @@ fn main() -> Result<(), std::io::Error> {
         if jpegs.len() > 0 {
             println!("{} Jpeg files will be ignored", jpegs.len());
         }
-        dcm_xml_to_worklist(&temp_file.path(), &args.output)?;
+        dcm_xml_to_worklist(None, &temp_file.path(), &args.output)?;
     } else if jpegs.len() > 0 {
         let mut command_args = vec![
             OsStr::new("-nsc"),
@@ -81,12 +81,13 @@ fn main() -> Result<(), std::io::Error> {
         ];
         command_args.extend(jpegs.iter().map(|x| OsStr::new(x)));
         command_args.push(OsStr::new(&args.output));
-        exec_command("img2dcm", command_args, true)?;
+        exec_command("img2dcm", command_args, true, None)?;
     } else {
         exec_command(
             "xml2dcm",
             vec![temp_file.path().as_os_str(), OsStr::new(&args.output)],
             true,
+            None,
         )?;
     }
 
