@@ -4,6 +4,9 @@ use std::process::Command;
 use std::process::Output;
 use std::sync::mpsc;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub fn exec_command<I, S>(

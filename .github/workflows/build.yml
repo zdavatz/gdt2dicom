@@ -29,7 +29,7 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
+          cargo fmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -133,7 +133,7 @@ jobs:
       - name: Check format
         run: |
           cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
+          cargo fmt --check src/**/*.rs
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
