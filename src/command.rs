@@ -10,13 +10,14 @@ pub fn exec_command<I, S>(
     command: &str,
     arguments: I,
     print: bool,
+    log_sender: Option<&mpsc::Sender<String>>,
 ) -> Result<Output, std::io::Error>
 where
     I: IntoIterator<Item = S> + Clone,
     S: AsRef<OsStr>,
 {
     let x = arguments.clone();
-    println!(
+    let log = format!(
         "Running: {} {}",
         &command,
         &x.into_iter()
@@ -24,7 +25,11 @@ where
             .collect::<Vec<_>>()
             .join(" "),
     );
-    let output = Command::new(command).args(arguments).output()?;
+    if let Some(l) = log_sender {
+        _ = l.send(log);
+    } else {
+        println!("{}", log);
+    }
     let mut command = Command::new(command);
     command.args(arguments);
     #[cfg(target_os = "windows")]

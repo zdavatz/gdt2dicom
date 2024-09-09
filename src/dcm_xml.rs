@@ -70,6 +70,7 @@ pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Resu
             OsStr::new("--all-frames"),
         ],
         true,
+        None,
     )
     .map_err(DcmError::IoError)?;
     return Ok(());

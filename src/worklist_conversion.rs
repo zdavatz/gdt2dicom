@@ -158,6 +158,7 @@ impl WorklistConversion {
                         out_file_path.push(&filename);
                         out_file_path.set_extension("wl");
                         convert_gdt_file(
+                            Some(&self.log_sender),
                             &path.as_path(),
                             &out_file_path,
                             &self.aetitle,
@@ -186,7 +187,7 @@ struct FSEventHandler {
 impl EventHandler for FSEventHandler {
     fn handle_event(&mut self, event: notify::Result<Event>) {
         if let Ok(event) = event {
-            // println!("Event: {:?}", &event);
+            println!("Event: {:?}", &event);
             match event.kind {
                 notify::event::EventKind::Create(notify::event::CreateKind::File)
                 | notify::event::EventKind::Create(notify::event::CreateKind::Any) => {
@@ -219,6 +220,7 @@ impl EventHandler for FSEventHandler {
 }
 
 fn convert_gdt_file(
+    log_sender: Option<&mpsc::Sender<String>>,
     input_path: &Path,
     output_path: &PathBuf,
     aetitle: &Option<String>,
@@ -230,15 +232,16 @@ fn convert_gdt_file(
     let path = temp_file.path();
 
     if aetitle.is_some() || modality.is_some() {
-        let dcm_file = modify_dcm_file(aetitle, modality, &path)?;
-        return Ok(dcm_to_worklist(&dcm_file.path(), output_path)?);
+        let dcm_file = modify_dcm_file(log_sender, aetitle, modality, &path)?;
+        return Ok(dcm_to_worklist(log_sender, &dcm_file.path(), output_path)?);
     } else {
         println!("temp_file {:?}", &path);
-        return Ok(dcm_xml_to_worklist(&path, output_path)?);
+        return Ok(dcm_xml_to_worklist(log_sender, &path, output_path)?);
     }
 }
 
 fn modify_dcm_file(
+    log_sender: Option<&mpsc::Sender<String>>,
     aetitle: &Option<String>,
     modality: &Option<String>,
     xml_file_path: &Path,
@@ -252,10 +255,14 @@ fn modify_dcm_file(
     let output1 = exec_command(
         "xml2dcm",
         vec![xml_file_path.as_os_str(), temp_dcm_file_path.as_os_str()],
-        true,
+        false,
+        log_sender,
     )?;
     if !output1.status.success() {
         let err_str = std::str::from_utf8(&output1.stderr).unwrap();
+        if let Some(log_sender) = log_sender {
+            _ = log_sender.send(err_str.to_string());
+        }
         let custom_error = Error::new(ErrorKind::Other, err_str);
         return Err(WorklistError::IoError(custom_error));
     }
@@ -270,9 +277,13 @@ fn modify_dcm_file(
                 temp_dcm_file_path.as_os_str(),
             ],
             true,
+            log_sender,
         )?;
         if !output2.status.success() {
             let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+            if let Some(log_sender) = log_sender {
+                _ = log_sender.send(err_str.to_string());
+            }
             let custom_error = Error::new(ErrorKind::Other, err_str);
             return Err(WorklistError::IoError(custom_error));
         }
@@ -286,11 +297,15 @@ fn modify_dcm_file(
                 OsStr::new(&format!("(0040,0100)[0].(0008,0060)={}", modality)),
                 temp_dcm_file_path.as_os_str(),
             ],
-            true,
+            false,
+            log_sender,
         )?;
         // TODO: log to channel
         if !output3.status.success() {
             let err_str = std::str::from_utf8(&output3.stderr).unwrap();
+            if let Some(log_sender) = log_sender {
+                _ = log_sender.send(err_str.to_string());
+            }
             let custom_error = Error::new(ErrorKind::Other, err_str);
             return Err(WorklistError::IoError(custom_error));
         }
