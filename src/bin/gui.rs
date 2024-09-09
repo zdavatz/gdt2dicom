@@ -246,6 +246,8 @@ where
     let modality_label = Label::new(Some("Modality"));
     let modality_entry = Entry::builder().hexpand(true).build();
 
+    let log_text_view = TextView::builder().build();
+
     let remove_button = Button::builder()
         .width_request(100)
         .hexpand(false)
@@ -273,7 +275,8 @@ where
     grid_layout.attach(&modality_label, 0, 3, 1, 1);
     grid_layout.attach(&modality_entry, 1, 3, 3, 1);
 
-    grid_layout.attach(&remove_button, 3, 4, 1, 1);
+    grid_layout.attach(&log_text_view, 0, 4, 4, 1);
+    grid_layout.attach(&remove_button, 3, 5, 1, 1);
 
     let w2 = window.clone();
     let input_entry2 = input_entry.clone();
