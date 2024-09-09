@@ -2,18 +2,22 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
 use gdt2dicom::worklist_conversion::WorklistConversion;
 use gtk::gio::prelude::FileExt;
-use gtk::gio::{ActionEntry, ListStore, Menu};
+use gtk::gio::{spawn_blocking, ActionEntry, ListStore, Menu};
+use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
 use gtk::{
     glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, FileDialog,
-    FileFilter, Frame, Grid, Label, ScrolledWindow, Separator,
+    FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
 };
+use std::sync::OnceLock;
+use tokio::runtime::Runtime;
 
 fn main() -> glib::ExitCode {
     let application = Application::builder()
@@ -365,6 +369,26 @@ where
         }
     });
 
+    let (asender, arecv) = async_channel::unbounded();
+    runtime().spawn(async move {
+        while let Ok(msg) = receiver.recv() {
+            asender.send(msg).await;
+        }
+    });
+
+    glib::spawn_future_local(clone!(
+        #[weak]
+        log_text_view,
+        async move {
+            while let Ok(msg) = arecv.recv().await {
+                // println!("async {msg}");
+                let buffer = log_text_view.buffer();
+                buffer.insert(&mut buffer.end_iter(), &msg);
+                buffer.insert(&mut buffer.end_iter(), "\n");
+            }
+        }
+    ));
+
     let wc6 = worklist_conversion.clone();
     remove_button.connect_clicked(move |_| {
         on_delete();
@@ -374,4 +398,9 @@ where
     });
 
     return grid_layout;
+}
+
+fn runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| Runtime::new().expect("Setting up tokio runtime needs to succeed."))
 }
