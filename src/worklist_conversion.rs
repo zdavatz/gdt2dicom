@@ -6,6 +6,7 @@ use std::fs::{create_dir, read_dir, rename};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 use tempfile::NamedTempFile;
 
 use crate::command::exec_command;
@@ -197,6 +198,8 @@ impl EventHandler for FSEventHandler {
                             .iter()
                             .any(|p| p.extension().map(|s| s == "gdt").unwrap_or(false))
                         {
+                            #[cfg(target_os = "windows")]
+                            std::thread::sleep(Duration::from_secs(1));
                             let result = c.scan_folder();
                             match result {
                                 Err(err) => {
@@ -268,7 +271,6 @@ fn modify_dcm_file(
     }
 
     if let Some(aetitle) = aetitle {
-        // TODO: log to channel
         let output2 = exec_command(
             "dcmodify",
             vec![
@@ -300,7 +302,6 @@ fn modify_dcm_file(
             false,
             log_sender,
         )?;
-        // TODO: log to channel
         if !output3.status.success() {
             let err_str = std::str::from_utf8(&output3.stderr).unwrap();
             if let Some(log_sender) = log_sender {
