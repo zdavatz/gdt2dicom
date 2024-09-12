@@ -184,7 +184,11 @@ impl WorklistConversion {
                 let entry = entry?;
                 let path = entry.path();
                 if path.is_file() {
-                    if path.extension().map(|s| s == "gdt").unwrap_or(false) {
+                    if path
+                        .extension()
+                        .map(|s| s.to_ascii_lowercase() == "gdt")
+                        .unwrap_or(false)
+                    {
                         _ = self
                             .log_sender
                             .send(format!("Processing GDT file: {}", &path.display()));
@@ -227,11 +231,12 @@ impl EventHandler for FSEventHandler {
                 notify::event::EventKind::Create(notify::event::CreateKind::File)
                 | notify::event::EventKind::Create(notify::event::CreateKind::Any) => {
                     if let std::sync::LockResult::Ok(c) = self.conversion.lock() {
-                        if event
-                            .paths
-                            .iter()
-                            .any(|p| p.extension().map(|s| s == "gdt").unwrap_or(false))
-                        {
+                        _ = c.log_sender.send(format!("Event: {:?}", &event));
+                        if event.paths.iter().any(|p| {
+                            p.extension()
+                                .map(|s| s.to_ascii_lowercase() == "gdt")
+                                .unwrap_or(false)
+                        }) {
                             #[cfg(target_os = "windows")]
                             std::thread::sleep(Duration::from_secs(1));
                             let result = c.scan_folder();
@@ -239,9 +244,10 @@ impl EventHandler for FSEventHandler {
                                 _ = c.log_sender.send(format!("Scan error {:?}", err));
                             }
                         } else {
-                            _ = c
-                                .log_sender
-                                .send("Not processing: unrecognised extension.".to_string());
+                            _ = c.log_sender.send(format!(
+                                "Not processing: unrecognised extension. {:?}",
+                                event.paths
+                            ));
                         }
                     }
                 }
