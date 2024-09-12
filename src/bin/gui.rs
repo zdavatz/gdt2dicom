@@ -1,12 +1,14 @@
 #![windows_subsystem = "windows"]
 
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
-use gdt2dicom::worklist_conversion::WorklistConversion;
+use gdt2dicom::worklist_conversion::{WorklistConversion, WorklistConversionState};
 use gtk::gio::prelude::FileExt;
 use gtk::gio::{ActionEntry, ListStore, Menu};
 use gtk::glib::{clone, spawn_future_local};
@@ -15,7 +17,7 @@ use gtk::{
     glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, Expander,
     FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
 };
-use std::sync::OnceLock;
+use serde_json::json;
 use tokio::runtime::Runtime;
 
 fn main() -> glib::ExitCode {
@@ -194,37 +196,69 @@ fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtE
 }
 
 fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
-    let conversation_scroll_window = ScrolledWindow::builder()
-        // .width_request(300)
+    let worklist_conversions: Arc<Mutex<Vec<Arc<Mutex<WorklistConversion>>>>> =
+        Arc::new(Mutex::new(vec![]));
+    let conversion_scroll_window = ScrolledWindow::builder()
         .hexpand(true)
         .vexpand(true)
         .height_request(400)
         .build();
-    grid.attach(&conversation_scroll_window, 0, grid_y_index, 4, 1);
+    grid.attach(&conversion_scroll_window, 0, grid_y_index, 4, 1);
 
     let box1 = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    conversation_scroll_window.set_child(Some(&box1));
+    conversion_scroll_window.set_child(Some(&box1));
+
+    let wcs1 = worklist_conversions.clone();
+    let on_updated = move || {
+        let wcs1 = wcs1.clone();
+        spawn_future_local(async move {
+            let wcs = wcs1.lock().unwrap();
+            let all_states: Vec<WorklistConversionState> = wcs
+                .iter()
+                .map(|arc| arc.lock().unwrap().to_state())
+                .collect();
+            _ = write_state_to_file(all_states);
+        });
+    };
 
     let new_convertion_button = Button::builder().label("Add new worklist folder").build();
-    let w2 = window.clone();
-    new_convertion_button.connect_clicked(move |_| {
-        let frame = Frame::new(Some("Worklist folder"));
-        let f = frame.clone();
-        let box2 = box1.clone();
-        let on_delete = move || {
-            box2.remove(&f);
-        };
-        let this_ui = setup_auto_convert_ui(&w2.clone(), on_delete);
-        frame.set_child(Some(&this_ui));
-        box1.append(&frame);
-    });
+    let wcs2 = worklist_conversions.clone();
+    new_convertion_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        move |_| {
+            let frame = Frame::new(Some("Worklist folder"));
+            let on_delete = clone!(
+                #[weak]
+                box1,
+                #[weak]
+                frame,
+                move || {
+                    box1.remove(&frame);
+                }
+            );
+
+            let (this_ui, wc) =
+                setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), None);
+            let mut cs = wcs2.lock().unwrap();
+            cs.push(wc);
+            frame.set_child(Some(&this_ui));
+            box1.append(&frame);
+        }
+    ));
     grid.attach(&new_convertion_button, 3, grid_y_index + 1, 1, 1);
     return grid_y_index + 2;
 }
 
-fn setup_auto_convert_ui<F>(window: &ApplicationWindow, on_delete: F) -> Grid
+fn setup_auto_convert_ui<F, G>(
+    window: &ApplicationWindow,
+    on_delete: F,
+    on_updated: G,
+    saved_state: Option<WorklistConversionState>,
+) -> (Grid, Arc<Mutex<WorklistConversion>>)
 where
     F: Fn() + 'static,
+    G: Fn() + 'static + Clone,
 {
     let (sender, receiver) = mpsc::channel();
     let worklist_conversion = Arc::new(Mutex::new(WorklistConversion::new(sender)));
@@ -295,11 +329,13 @@ where
     let w2 = window.clone();
     let input_entry2 = input_entry.clone();
     let wc1 = worklist_conversion.clone();
+    let on_updated2 = on_updated.clone();
     input_button.connect_clicked(move |_| {
         let input_entry3 = input_entry2.clone();
         let dialog = FileDialog::builder().build();
         let wc2 = wc1.clone();
         let w3 = w2.clone();
+        let on_updated2 = on_updated2.clone();
         dialog.select_folder(
             Some(&w2),
             None::<gtk::gio::Cancellable>.as_ref(),
@@ -315,7 +351,9 @@ where
                                 let wc3 = wc2.clone();
                                 let result = wc.set_input_dir_path(Some(PathBuf::from(p)), wc3);
                                 match result {
-                                    Ok(()) => {}
+                                    Ok(()) => {
+                                        on_updated2();
+                                    }
                                     Err(err) => {
                                         AlertDialog::builder()
                                             .message("Error")
@@ -336,10 +374,12 @@ where
     let w3 = window.clone();
     let output_entry2 = output_entry.clone();
     let wc3 = worklist_conversion.clone();
+    let on_updated2 = on_updated.clone();
     output_button.connect_clicked(move |_| {
         let output_entry3 = output_entry2.clone();
         let dialog = FileDialog::builder().build();
         let wc4 = wc3.clone();
+        let on_updated2 = on_updated2.clone();
         dialog.select_folder(
             Some(&w3),
             None::<gtk::gio::Cancellable>.as_ref(),
@@ -353,6 +393,7 @@ where
                             output_entry3.buffer().set_text(p);
                             if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
                                 wc.output_dir_path = Some(PathBuf::from(p));
+                                on_updated2();
                             }
                         }
                     }
@@ -363,21 +404,29 @@ where
 
     let wc4 = worklist_conversion.clone();
     let ae = aetitle_entry.clone();
+    let on_updated2 = on_updated.clone();
     aetitle_entry.connect_changed(move |_| {
         if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
             let text = ae.buffer().text().as_str().to_string();
             wc.set_aetitle_string(text);
+            on_updated2();
         }
     });
 
     let wc5 = worklist_conversion.clone();
     let modality = modality_entry.clone();
-    modality_entry.connect_changed(move |_| {
-        if let std::sync::LockResult::Ok(mut wc) = wc5.lock() {
-            let text = modality.buffer().text().as_str().to_string();
-            wc.set_modality_string(text);
+    let on_updated2 = on_updated.clone();
+    modality_entry.connect_changed(clone!(
+        #[weak]
+        modality_entry,
+        move |_| {
+            if let std::sync::LockResult::Ok(mut wc) = wc5.lock() {
+                let text = modality_entry.buffer().text().as_str().to_string();
+                wc.set_modality_string(text);
+                on_updated2();
+            }
         }
-    });
+    ));
 
     let (asender, arecv) = async_channel::unbounded();
     runtime().spawn(async move {
@@ -407,7 +456,21 @@ where
         }
     });
 
-    return grid_layout;
+    return (grid_layout, worklist_conversion.clone());
+}
+
+fn write_state_to_file(
+    worklist_conversions: Vec<WorklistConversionState>,
+) -> Result<(), std::io::Error> {
+    let state_string = json!({
+        "conversions": worklist_conversions
+    })
+    .to_string();
+    let mut current_path = std::env::current_exe()?;
+    current_path.set_file_name("state.json");
+    let mut f = File::create(current_path)?;
+    f.write_all(state_string.as_bytes())?;
+    Ok(())
 }
 
 fn runtime() -> &'static Runtime {

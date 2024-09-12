@@ -1,4 +1,5 @@
 use notify::{recommended_watcher, Event, EventHandler, RecursiveMode, Watcher};
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::convert::From;
 use std::ffi::OsStr;
 use std::fmt;
@@ -65,6 +66,27 @@ pub struct WorklistConversion {
     log_sender: mpsc::Sender<String>,
 }
 
+pub struct WorklistConversionState {
+    pub input_dir_path: Option<PathBuf>,
+    pub output_dir_path: Option<PathBuf>,
+    pub aetitle: Option<String>,
+    pub modality: Option<String>,
+}
+
+impl Serialize for WorklistConversionState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("WorklistConversionState", 3)?;
+        s.serialize_field("input_dir_path", &self.input_dir_path)?;
+        s.serialize_field("output_dir_path", &self.output_dir_path)?;
+        s.serialize_field("aetitle", &self.aetitle)?;
+        s.serialize_field("modality", &self.modality)?;
+        s.end()
+    }
+}
+
 impl WorklistConversion {
     pub fn new(log_sender: mpsc::Sender<String>) -> WorklistConversion {
         return WorklistConversion {
@@ -74,6 +96,15 @@ impl WorklistConversion {
             modality: None,
             log_sender: log_sender,
         };
+    }
+    pub fn to_state(&self) -> WorklistConversionState {
+        let input_dir_path = self.input_watcher.as_ref().map(|(path, _)| path.clone());
+        WorklistConversionState {
+            input_dir_path: input_dir_path,
+            output_dir_path: self.output_dir_path.clone(),
+            aetitle: self.aetitle.clone(),
+            modality: self.modality.clone(),
+        }
     }
     pub fn input_dir_path(&self) -> Option<PathBuf> {
         if let Some((p, _)) = &self.input_watcher {
