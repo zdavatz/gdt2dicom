@@ -190,7 +190,7 @@ fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtE
     let gdt_file = parse_file(input_path)?;
     let xml_events = default_dcm_xml(DcmTransferType::LittleEndianExplicit);
     let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
-    return dcm_xml_to_worklist(None, &temp_file.path(), output_path).map_err(GdtError::IoError);
+    return Ok(dcm_xml_to_worklist(None, &temp_file.path(), output_path)?);
 }
 
 fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {

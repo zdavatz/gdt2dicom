@@ -1,3 +1,4 @@
+use std::convert::From;
 use std::fs::File;
 use std::path::PathBuf;
 use xml::attribute::OwnedAttribute;
@@ -13,6 +14,24 @@ pub enum OppError {
     IoError(std::io::Error),
     XmlReaderError(xml::reader::Error),
     XmlWriterError(xml::writer::Error),
+}
+
+impl From<std::io::Error> for OppError {
+    fn from(error: std::io::Error) -> Self {
+        OppError::IoError(error)
+    }
+}
+
+impl From<xml::reader::Error> for OppError {
+    fn from(error: xml::reader::Error) -> Self {
+        OppError::XmlReaderError(error)
+    }
+}
+
+impl From<xml::writer::Error> for OppError {
+    fn from(error: xml::writer::Error) -> Self {
+        OppError::XmlWriterError(error)
+    }
 }
 
 pub fn default_xml_str() -> String {
@@ -114,11 +133,11 @@ pub fn file_to_xml(file: GdtFile, output: PathBuf) -> Result<File, OppError> {
         .collect::<Result<Vec<_>, xml::reader::Error>>()
         .unwrap();
     insert_patient_to_xml(file, &mut events);
-    let file = File::create(output).map_err(OppError::IoError)?;
+    let file = File::create(output)?;
     let mut writer = EventWriter::new(&file);
     for e in events {
         match e.as_writer_event() {
-            Some(e) => writer.write(e).map_err(OppError::XmlWriterError)?,
+            Some(e) => writer.write(e)?,
             _ => (), // events like EndDocument are ignored
         };
     }
