@@ -1,5 +1,6 @@
+use chrono::prelude::*;
 use notify::{recommended_watcher, Event, EventHandler, RecursiveMode, Watcher};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::convert::From;
 use std::ffi::OsStr;
 use std::fmt;
@@ -104,7 +105,7 @@ impl WorklistConversion {
         let arc = Arc::new(Mutex::new(wc));
         let arc1 = arc.clone();
         let mut wc = arc1.lock().unwrap();
-        wc.set_input_dir_path(state.input_dir_path.clone(), arc.clone());
+        _ = wc.set_input_dir_path(state.input_dir_path.clone(), arc.clone());
         return arc;
     }
     pub fn input_dir_path(&self) -> Option<PathBuf> {
@@ -193,20 +194,17 @@ impl WorklistConversion {
                         _ = self
                             .log_sender
                             .send(format!("Processing GDT file: {}", &path.display()));
-                        let filename = &path.file_name().unwrap().to_str().unwrap();
-                        let mut out_file_path = output_dir_path.clone();
-                        out_file_path.push(&filename);
-                        out_file_path.set_extension("wl");
-                        convert_gdt_file(
+                        let filename = convert_gdt_file(
                             Some(&self.log_sender),
                             &path.as_path(),
-                            &out_file_path,
+                            &output_dir_path,
                             &self.aetitle,
                             &self.modality,
                         )?;
 
                         let mut processed_path = processed_folder.clone();
                         processed_path.push(&filename);
+                        processed_path.set_extension("gdt");
                         rename(&path, processed_path)?;
                     } else {
                         _ = self
@@ -263,22 +261,35 @@ impl EventHandler for FSEventHandler {
 fn convert_gdt_file(
     log_sender: Option<&mpsc::Sender<String>>,
     input_path: &Path,
-    output_path: &PathBuf,
+    output_dir: &PathBuf,
     aetitle: &Option<String>,
     modality: &Option<String>,
-) -> Result<(), WorklistError> {
+) -> Result<String, WorklistError> {
     let gdt_file = parse_file(input_path)?;
+    let local: DateTime<Local> = Local::now();
+    let timestamp = local.format("%d.%m.%Y_%H.%M.%S").to_string();
+    let filename = format!(
+        "{}_{}_{}.wl",
+        &gdt_file.object_patient.patient_first_name,
+        &gdt_file.object_patient.patient_name,
+        timestamp
+    );
+    let mut output_path = output_dir.clone();
+    output_path.push(&filename);
+
     let xml_events = default_dcm_xml(DcmTransferType::LittleEndianExplicit);
     let temp_file = file_to_xml(gdt_file, &xml_events)?;
     let path = temp_file.path();
 
     if aetitle.is_some() || modality.is_some() {
         let dcm_file = modify_dcm_file(log_sender, aetitle, modality, &path)?;
-        return Ok(dcm_to_worklist(log_sender, &dcm_file.path(), output_path)?);
+        dcm_to_worklist(log_sender, &dcm_file.path(), &output_path)?;
     } else {
         println!("temp_file {:?}", &path);
-        return Ok(dcm_xml_to_worklist(log_sender, &path, output_path)?);
+        dcm_xml_to_worklist(log_sender, &path, &output_path)?;
     }
+
+    return Ok(filename);
 }
 
 fn modify_dcm_file(

@@ -475,7 +475,6 @@ where
         log_text_view,
         async move {
             while let Ok(msg) = arecv.recv().await {
-                // println!("async {msg}");
                 let buffer = log_text_view.buffer();
                 buffer.insert(&mut buffer.end_iter(), &msg);
                 buffer.insert(&mut buffer.end_iter(), "\n");
