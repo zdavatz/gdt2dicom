@@ -1,7 +1,5 @@
 #![windows_subsystem = "windows"]
 
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
@@ -17,6 +15,7 @@ use gtk::{
     glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, Expander,
     FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::runtime::Runtime;
 
@@ -223,10 +222,10 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
 
     let new_convertion_button = Button::builder().label("Add new worklist folder").build();
     let wcs2 = worklist_conversions.clone();
-    new_convertion_button.connect_clicked(clone!(
+    let add_new_worklist = clone!(
         #[weak]
         window,
-        move |_| {
+        move |state: Option<WorklistConversionState>| {
             let frame = Frame::new(Some("Worklist folder"));
             let on_delete = clone!(
                 #[weak]
@@ -239,14 +238,30 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
             );
 
             let (this_ui, wc) =
-                setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), None);
+                setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), state);
             let mut cs = wcs2.lock().unwrap();
             cs.push(wc);
             frame.set_child(Some(&this_ui));
             box1.append(&frame);
         }
-    ));
+    );
+    let add_new_worklist2 = add_new_worklist.clone();
+    new_convertion_button.connect_clicked(move |_| {
+        add_new_worklist2(None);
+    });
     grid.attach(&new_convertion_button, 3, grid_y_index + 1, 1, 1);
+
+    match read_saved_states() {
+        Err(err) => {
+            println!("Error while restoring state: {:?}", err);
+        }
+        Ok(saved_states) => {
+            for state in saved_states {
+                add_new_worklist(Some(state));
+            }
+        }
+    }
+
     return grid_y_index + 2;
 }
 
@@ -261,7 +276,12 @@ where
     G: Fn() + 'static + Clone,
 {
     let (sender, receiver) = mpsc::channel();
-    let worklist_conversion = Arc::new(Mutex::new(WorklistConversion::new(sender)));
+    let worklist_conversion = if let Some(ref ss) = saved_state {
+        WorklistConversion::from_state(&ss, sender)
+    } else {
+        Arc::new(Mutex::new(WorklistConversion::new(sender)))
+    };
+
     let input_file_label = Label::new(Some("Input Folder"));
     let input_entry = Entry::builder().hexpand(true).sensitive(false).build();
     let input_button = Button::builder()
@@ -282,6 +302,21 @@ where
     let aetitle_entry = Entry::builder().hexpand(true).build();
     let modality_label = Label::new(Some("Modality"));
     let modality_entry = Entry::builder().hexpand(true).build();
+
+    if let Some(ss) = saved_state {
+        if let Some(s) = &ss.input_dir_path {
+            input_entry.buffer().set_text(s.to_str().unwrap_or(""));
+        }
+        if let Some(s) = &ss.output_dir_path {
+            output_entry.buffer().set_text(s.to_str().unwrap_or(""));
+        }
+        if let Some(s) = &ss.aetitle {
+            aetitle_entry.buffer().set_text(s);
+        }
+        if let Some(s) = &ss.modality {
+            modality_entry.buffer().set_text(s);
+        }
+    }
 
     let log_text_view = TextView::builder().build();
     let log_scroll_window = ScrolledWindow::builder()
@@ -459,18 +494,44 @@ where
     return (grid_layout, worklist_conversion.clone());
 }
 
+#[derive(Serialize, Deserialize)]
+struct StateFile {
+    conversions: Vec<WorklistConversionState>,
+}
+
 fn write_state_to_file(
     worklist_conversions: Vec<WorklistConversionState>,
 ) -> Result<(), std::io::Error> {
-    let state_string = json!({
-        "conversions": worklist_conversions
+    let state_string = json!(StateFile {
+        conversions: worklist_conversions
     })
     .to_string();
     let mut current_path = std::env::current_exe()?;
     current_path.set_file_name("state.json");
-    let mut f = File::create(current_path)?;
-    f.write_all(state_string.as_bytes())?;
+    std::fs::write(current_path, state_string)?;
     Ok(())
+}
+
+fn read_saved_states() -> Result<Vec<WorklistConversionState>, std::io::Error> {
+    let mut current_path = std::env::current_exe()?;
+    current_path.set_file_name("state.json");
+    if !current_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let data = std::fs::read(&current_path)?;
+
+    match serde_json::from_slice::<StateFile>(&data) {
+        Ok(v) => Ok(v.conversions),
+        Err(err) => {
+            AlertDialog::builder()
+                .message("Cannot read saved data")
+                .detail(err.to_string())
+                .modal(true)
+                .build()
+                .show(None::<&ApplicationWindow>);
+            Ok(Vec::new())
+        }
+    }
 }
 
 fn runtime() -> &'static Runtime {

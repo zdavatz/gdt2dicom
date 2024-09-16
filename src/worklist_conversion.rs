@@ -1,5 +1,5 @@
 use notify::{recommended_watcher, Event, EventHandler, RecursiveMode, Watcher};
-use serde::ser::{Serialize, SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::convert::From;
 use std::ffi::OsStr;
 use std::fmt;
@@ -66,25 +66,12 @@ pub struct WorklistConversion {
     log_sender: mpsc::Sender<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WorklistConversionState {
     pub input_dir_path: Option<PathBuf>,
     pub output_dir_path: Option<PathBuf>,
     pub aetitle: Option<String>,
     pub modality: Option<String>,
-}
-
-impl Serialize for WorklistConversionState {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut s = serializer.serialize_struct("WorklistConversionState", 3)?;
-        s.serialize_field("input_dir_path", &self.input_dir_path)?;
-        s.serialize_field("output_dir_path", &self.output_dir_path)?;
-        s.serialize_field("aetitle", &self.aetitle)?;
-        s.serialize_field("modality", &self.modality)?;
-        s.end()
-    }
 }
 
 impl WorklistConversion {
@@ -105,6 +92,20 @@ impl WorklistConversion {
             aetitle: self.aetitle.clone(),
             modality: self.modality.clone(),
         }
+    }
+    pub fn from_state(
+        state: &WorklistConversionState,
+        log_sender: mpsc::Sender<String>,
+    ) -> Arc<Mutex<WorklistConversion>> {
+        let mut wc = WorklistConversion::new(log_sender);
+        wc.output_dir_path = state.output_dir_path.clone();
+        wc.set_aetitle_string(state.aetitle.clone().unwrap_or("".to_string()));
+        wc.set_modality_string(state.modality.clone().unwrap_or("".to_string()));
+        let arc = Arc::new(Mutex::new(wc));
+        let arc1 = arc.clone();
+        let mut wc = arc1.lock().unwrap();
+        wc.set_input_dir_path(state.input_dir_path.clone(), arc.clone());
+        return arc;
     }
     pub fn input_dir_path(&self) -> Option<PathBuf> {
         if let Some((p, _)) = &self.input_watcher {
