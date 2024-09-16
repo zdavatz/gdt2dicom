@@ -1,4 +1,5 @@
 use log::error;
+use std::convert::From;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -136,6 +137,12 @@ pub enum GdtError {
     InvalidValue(String, String),
 }
 
+impl From<std::io::Error> for GdtError {
+    fn from(error: std::io::Error) -> Self {
+        GdtError::IoError(error)
+    }
+}
+
 impl std::fmt::Display for GdtError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -155,7 +162,7 @@ pub fn parse_file_lines<P>(
 where
     P: AsRef<Path>,
 {
-    let file = File::open(path).map_err(GdtError::IoError)?;
+    let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     return Ok(reader.lines().map(|r_str| {

@@ -1,3 +1,4 @@
+use std::convert::From;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
@@ -25,6 +26,24 @@ pub enum DcmError {
     XmlWriterError(xml::writer::Error),
 }
 
+impl From<std::io::Error> for DcmError {
+    fn from(error: std::io::Error) -> Self {
+        DcmError::IoError(error)
+    }
+}
+
+impl From<xml::reader::Error> for DcmError {
+    fn from(error: xml::reader::Error) -> Self {
+        DcmError::XmlReaderError(error)
+    }
+}
+
+impl From<xml::writer::Error> for DcmError {
+    fn from(error: xml::writer::Error) -> Self {
+        DcmError::XmlWriterError(error)
+    }
+}
+
 impl fmt::Display for DcmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -36,27 +55,22 @@ impl fmt::Display for DcmError {
 }
 
 pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
-    let file = File::open(path).map_err(DcmError::IoError)?;
+    let file = File::open(path)?;
     let reader = EventReader::new(file);
     let mut events: Vec<XmlEvent> = reader
         .into_iter()
-        .collect::<Result<Vec<_>, xml::reader::Error>>()
-        .map_err(DcmError::XmlReaderError)?;
+        .collect::<Result<Vec<_>, xml::reader::Error>>()?;
     add_meta_header_if_not_exist(DcmTransferType::JPEGBaseline, &mut events);
     return Ok(events);
 }
 
 pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
-    let output = Command::new("dcm2xml")
-        .arg(path)
-        .output()
-        .map_err(DcmError::IoError)?;
+    let output = Command::new("dcm2xml").arg(path).output()?;
     std::io::stderr().write_all(&output.stderr).unwrap();
     let reader = EventReader::new(output.stdout.as_slice());
     let events: Vec<XmlEvent> = reader
         .into_iter()
-        .collect::<Result<Vec<_>, xml::reader::Error>>()
-        .map_err(DcmError::XmlReaderError)?;
+        .collect::<Result<Vec<_>, xml::reader::Error>>()?;
     return Ok(events);
 }
 
@@ -71,17 +85,16 @@ pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Resu
         ],
         true,
         None,
-    )
-    .map_err(DcmError::IoError)?;
+    )?;
     return Ok(());
 }
 
 pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
-    let temp_file = NamedTempFile::new().map_err(DcmError::IoError)?;
+    let temp_file = NamedTempFile::new()?;
     let mut writer = EventWriter::new(&temp_file);
     for e in events {
         match e.as_writer_event() {
-            Some(e) => writer.write(e).map_err(DcmError::XmlWriterError)?,
+            Some(e) => writer.write(e)?,
             _ => (), // events like EndDocument are ignored
         };
     }
