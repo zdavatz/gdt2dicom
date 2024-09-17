@@ -46,6 +46,6 @@ test = false
 bench = false
 
 [[bin]]
-name = "gui"
+name = "gdt2dicom-gui"
 test = false
 bench = false
