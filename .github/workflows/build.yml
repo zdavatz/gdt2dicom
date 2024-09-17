@@ -25,7 +25,7 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
-          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui
       - name: Check format
         run: |
           cd ${{ github.workspace }}
@@ -39,7 +39,7 @@ jobs:
             ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
             ./target/x86_64-unknown-linux-gnu/release/gdt2opp
             ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
-            ./target/x86_64-unknown-linux-gnu/release/gui
+            ./target/x86_64-unknown-linux-gnu/release/gdt2dicom-gui
           retention-days: 5
 
   build-windows:
@@ -71,7 +71,7 @@ jobs:
       - name: Copy GUI dependencies
         run: |
           mkdir gui-out
-          cp .\target\release\gui.exe ./gui-out/
+          cp .\target\release\gdt2dicom-gui.exe ./gui-out/
           git clone https://github.com/B00merang-Project/Windows-10.git
           cp C:/gtk/bin/cairo-2.dll ./gui-out/
           cp C:/gtk/bin/harfbuzz.dll ./gui-out/
@@ -143,5 +143,5 @@ jobs:
             ./target/release/dicom2gdt
             ./target/release/gdt2opp
             ./target/release/gdt2vdds
-            ./target/release/gui
+            ./target/release/gdt2dicom-gui
           retention-days: 5

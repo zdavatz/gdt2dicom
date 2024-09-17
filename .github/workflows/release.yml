@@ -25,11 +25,12 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
-          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui
           tar -czvf gdt2dicom-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
           tar -czvf dicom2gdt-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
           tar -czvf gdt2opp-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2opp
           tar -czvf gdt2vdds-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
+          tar -czvf gdt2dicom-gui-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom-gui
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -38,7 +39,7 @@ jobs:
             dicom2gdt-linux.tar.gz
             gdt2opp-linux.tar.gz
             gdt2vdds-linux.tar.gz
-            gui-linux.tar.gz
+            gdt2dicom-gui-linux.tar.gz
 
   build-windows:
     runs-on: windows-2022
@@ -62,7 +63,7 @@ jobs:
       - name: Copy GUI dependencies
         run: |
           mkdir gui-out
-          cp .\target\release\gui.exe ./gui-out/
+          cp .\target\release\gdt2dicom-gui.exe ./gui-out/
           git clone https://github.com/B00merang-Project/Windows-10.git
           cp C:/gtk/bin/cairo-2.dll ./gui-out/
           cp C:/gtk/bin/harfbuzz.dll ./gui-out/
@@ -101,7 +102,7 @@ jobs:
           echo '[Settings]' >> ./gui-out/etc/gtk-4.0/settings.ini
           echo 'gtk-theme-name=Windows10' >> ./gui-out/etc/gtk-4.0/settings.ini
           echo 'gtk-font-name=Segoe UI 9' >> ./gui-out/etc/gtk-4.0/settings.ini
-          Compress-Archive -Path .\gui-out\* -Destination .\gui-win.zip
+          Compress-Archive -Path .\gui-out\* -Destination .\gdt2dicom-gui-win.zip
 
       - uses: ncipollo/release-action@v1
         with:
@@ -111,7 +112,7 @@ jobs:
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
-            .\gui-win.zip
+            .\gdt2dicom-gui-win.zip
 
   build-mac:
     runs-on: macos-latest
@@ -131,7 +132,7 @@ jobs:
           tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
           tar -czvf gdt2opp-mac.tar.gz ./target/release/gdt2opp
           tar -czvf gdt2vdds-mac.tar.gz ./target/release/gdt2vdds
-          tar -czvf gui-mac.tar.gz ./target/release/gui
+          tar -czvf gdt2dicom-gui-mac.tar.gz ./target/release/gdt2dicom-gui
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
@@ -140,4 +141,4 @@ jobs:
             dicom2gdt-mac.tar.gz
             gdt2opp-mac.tar.gz
             gdt2vdds-mac.tar.gz
-            gui-mac.tar.gz
+            gdt2dicom-gui-mac.tar.gz
