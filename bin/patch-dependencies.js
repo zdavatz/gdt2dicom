@@ -45,7 +45,7 @@ function patchBinary(binPath, dependencyPath) {
 }
 
 if (process.argv.length < 3) {
-    console.log('Usage: node patchy.js ./gdt2dicom-gui.app/Contents/MacOS/gdt2dicom-gui-bin');
+    console.log('Usage: node patch-dependencies.js ./gdt2dicom-gui.app/Contents/MacOS/gdt2dicom-gui-bin');
 }
 const input = process.argv[2];
 const pendings = [input];
