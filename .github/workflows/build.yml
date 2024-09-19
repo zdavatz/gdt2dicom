@@ -126,22 +126,24 @@ jobs:
       - name: Install dependencies
         run: |
           brew install gtk4
-      - name: Build
-        run: |
-          cd ${{ github.workspace }}
-          cargo build --release
+          cargo install cargo-bundle
       - name: Check format
         run: |
           cd ${{ github.workspace }}
           cargo fmt --check
+      - name: Build
+        run: |
+          cd ${{ github.workspace }}
+          cargo build --release
+          cargo bundle --release --bin gdt2dicom-gui
+          node bin/patch-dependencies.js ./target/release/bundle/osx/gdt2dicom.app/Contents/MacOS/gdt2dicom-gui
+          mv ./target/release/bundle/osx/gdt2dicom.app ./target/release/gdt2dicom-gui.app
+          cd ./target/release/
+          tar -czvf gdt2dicom-mac.tar.gz gdt2dicom dicom2gdt gdt2opp gdt2vdds gdt2dicom-gui.app
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
           name: Mac Artifact
           path: |
-            ./target/release/gdt2dicom
-            ./target/release/dicom2gdt
-            ./target/release/gdt2opp
-            ./target/release/gdt2vdds
-            ./target/release/gdt2dicom-gui
+            ./target/release/gdt2dicom-mac.tar.gz
           retention-days: 5

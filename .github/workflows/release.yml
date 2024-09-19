@@ -124,21 +124,27 @@ jobs:
       - name: Install dependencies
         run: |
           brew install gtk4
+          cargo install cargo-bundle
       - name: Build
         run: |
           cd ${{ github.workspace }}
           cargo build --release
-          tar -czvf gdt2dicom-mac.tar.gz ./target/release/gdt2dicom
-          tar -czvf dicom2gdt-mac.tar.gz ./target/release/dicom2gdt
-          tar -czvf gdt2opp-mac.tar.gz ./target/release/gdt2opp
-          tar -czvf gdt2vdds-mac.tar.gz ./target/release/gdt2vdds
-          tar -czvf gdt2dicom-gui-mac.tar.gz ./target/release/gdt2dicom-gui
+          cargo bundle --release --bin gdt2dicom-gui
+          node bin/patch-dependencies.js ./target/release/bundle/osx/gdt2dicom.app/Contents/MacOS/gdt2dicom-gui
+
+          cd ./target/release/
+          tar -czvf gdt2dicom-mac.tar.gz ./gdt2dicom
+          tar -czvf dicom2gdt-mac.tar.gz ./dicom2gdt
+          tar -czvf gdt2opp-mac.tar.gz ./gdt2opp
+          tar -czvf gdt2vdds-mac.tar.gz ./gdt2vdds
+          mv ./bundle/osx/gdt2dicom.app ./gdt2dicom-gui.app
+          tar -czvf gdt2dicom-gui-mac.tar.gz ./gdt2dicom-gui.app
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
           artifacts: |
-            gdt2dicom-mac.tar.gz
-            dicom2gdt-mac.tar.gz
-            gdt2opp-mac.tar.gz
-            gdt2vdds-mac.tar.gz
-            gdt2dicom-gui-mac.tar.gz
+            ./target/release/gdt2dicom-mac.tar.gz
+            ./target/release/dicom2gdt-mac.tar.gz
+            ./target/release/gdt2opp-mac.tar.gz
+            ./target/release/gdt2vdds-mac.tar.gz
+            ./target/release/gdt2dicom-gui-mac.tar.gz
