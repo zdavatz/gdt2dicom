@@ -137,9 +137,25 @@ jobs:
           cargo build --release
           cargo bundle --release --bin gdt2dicom-gui
           node bin/patch-dependencies.js ./target/release/bundle/osx/gdt2dicom.app/Contents/MacOS/gdt2dicom-gui
+
+          # Bundle dcmtk binaries to GUI
+
+          curl -o dcmtk.tar.bz2 https://dicom.offis.de/download/dcmtk/dcmtk368/bin/dcmtk-3.6.8-macosx-arm64.tar.bz2
+          mkdir dcmtk
+          tar zxvf ./dcmtk.tar.bz2 -C dcmtk --strip-components=1
+          mkdir -p ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin
+
+          cp ./dcmtk/bin/xml2dcm ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+          cp ./dcmtk/bin/dcmodify ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+          cp ./dcmtk/bin/dcmdump ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+          cp ./dcmtk/bin/dump2dcm ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+
+          # Pack GUI
+
           mv ./target/release/bundle/osx/gdt2dicom.app ./target/release/gdt2dicom-gui.app
           cd ./target/release/
           tar -czvf gdt2dicom-mac.tar.gz gdt2dicom dicom2gdt gdt2opp gdt2vdds gdt2dicom-gui.app
+
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
