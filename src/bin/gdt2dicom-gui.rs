@@ -13,7 +13,7 @@ use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
 use gtk::{
     glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, Expander,
-    FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView,
+    FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView, Window,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,9 +27,10 @@ fn main() -> glib::ExitCode {
     application.connect_activate(|app| {
         let menubar = Menu::new();
 
-        let file_menu = Menu::new();
-        file_menu.append(Some("About"), Some("win.open-about"));
-        menubar.append_submenu(Some("Help"), &file_menu);
+        let help_menu = Menu::new();
+        help_menu.append(Some("About"), Some("win.open-about"));
+        menubar.append_submenu(Some("Help"), &help_menu);
+        help_menu.append(Some("Copyright"), Some("win.open-copyright"));
         app.set_menubar(Some(&menubar));
 
         let window = ApplicationWindow::builder()
@@ -40,12 +41,21 @@ fn main() -> glib::ExitCode {
             .show_menubar(true)
             .build();
 
-        let action_close = ActionEntry::builder("open-about")
+        let action_about = ActionEntry::builder("open-about")
             .activate(|_window: &ApplicationWindow, _, _| {
                 open_about_dialog();
             })
             .build();
-        window.add_action_entries([action_close]);
+        let action_copyright = ActionEntry::builder("open-copyright")
+            .activate(clone!(
+                #[weak]
+                app,
+                move |_window: &ApplicationWindow, _, _| {
+                    open_copyright_dialog(app);
+                }
+            ))
+            .build();
+        window.add_action_entries([action_about, action_copyright]);
 
         let grid_layout = Grid::builder()
             .column_spacing(12)
@@ -78,6 +88,28 @@ fn open_about_dialog() {
         .version(VERSION)
         .build();
     a.set_visible(true);
+}
+
+fn open_copyright_dialog(app: Application) {
+    let copyright_str = include_str!("../../COPYRIGHT");
+    let text_view = TextView::builder().build();
+    let buffer = text_view.buffer();
+    buffer.set_text(&copyright_str);
+
+    let scrolled_window = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .child(&text_view)
+        .build();
+
+    let window = Window::builder()
+        .application(&app)
+        .child(&scrolled_window)
+        .title("Copyright")
+        .default_width(400)
+        .default_height(400)
+        .build();
+    window.present();
 }
 
 fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
@@ -449,7 +481,6 @@ where
     });
 
     let wc5 = worklist_conversion.clone();
-    let modality = modality_entry.clone();
     let on_updated2 = on_updated.clone();
     modality_entry.connect_changed(clone!(
         #[weak]
