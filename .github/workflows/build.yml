@@ -144,11 +144,13 @@ jobs:
           mkdir dcmtk
           tar zxvf ./dcmtk.tar.bz2 -C dcmtk --strip-components=1
           mkdir -p ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin
+          mkdir -p ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/share
 
           cp ./dcmtk/bin/xml2dcm ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/bin/dcmodify ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/bin/dcmdump ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/bin/dump2dcm ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+          cp ./dcmtk/share/dcmtk-*/dicom.dic ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/share/
 
           # Pack GUI
 
