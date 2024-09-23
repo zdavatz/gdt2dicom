@@ -11,7 +11,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tempfile::NamedTempFile;
 
-use crate::command::exec_command;
+use crate::command::{exec_command, exec_command_with_env};
 use crate::dcm_worklist::{dcm_to_worklist, dcm_xml_to_worklist};
 use crate::dcm_xml::{default_dcm_xml, file_to_xml, DcmError, DcmTransferType};
 use crate::gdt::{parse_file, GdtError};
@@ -292,6 +292,12 @@ fn convert_gdt_file(
     return Ok(filename);
 }
 
+fn dicom_dic_path() -> PathBuf {
+    let mut current_path = std::env::current_exe().unwrap();
+    current_path.pop();
+    return current_path.join("../Resources/share/dicom.dic");
+}
+
 fn modify_dcm_file(
     log_sender: Option<&mpsc::Sender<String>>,
     aetitle: &Option<String>,
@@ -319,8 +325,14 @@ fn modify_dcm_file(
         return Err(WorklistError::IoError(custom_error));
     }
 
+    let envs = if cfg!(target_os = "macos") {
+        vec![("DCMDICTPATH".to_string(), dicom_dic_path())]
+    } else {
+        vec![]
+    };
+
     if let Some(aetitle) = aetitle {
-        let output2 = exec_command(
+        let output2 = exec_command_with_env(
             "dcmodify",
             vec![
                 OsStr::new("-i"),
@@ -329,6 +341,7 @@ fn modify_dcm_file(
             ],
             true,
             log_sender,
+            envs.clone(),
         )?;
         if !output2.status.success() {
             let err_str = std::str::from_utf8(&output2.stderr).unwrap();
@@ -341,7 +354,7 @@ fn modify_dcm_file(
     }
 
     if let Some(modality) = modality {
-        let output3 = exec_command(
+        let output3 = exec_command_with_env(
             "dcmodify",
             vec![
                 OsStr::new("-i"),
@@ -350,6 +363,7 @@ fn modify_dcm_file(
             ],
             false,
             log_sender,
+            envs,
         )?;
         if !output3.status.success() {
             let err_str = std::str::from_utf8(&output3.stderr).unwrap();
