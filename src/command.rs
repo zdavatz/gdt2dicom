@@ -59,6 +59,20 @@ where
     I: IntoIterator<Item = S> + Clone,
     S: AsRef<OsStr>,
 {
+    exec_command_with_env(command, arguments, print, log_sender, Vec::new())
+}
+
+pub fn exec_command_with_env<I, S>(
+    command: &str,
+    arguments: I,
+    print: bool,
+    log_sender: Option<&mpsc::Sender<String>>,
+    envs: Vec<(String, PathBuf)>,
+) -> Result<Output, std::io::Error>
+where
+    I: IntoIterator<Item = S> + Clone,
+    S: AsRef<OsStr>,
+{
     let a = arguments.clone();
     let full_path = binary_to_path(command.to_string());
     let log = format!(
@@ -74,7 +88,16 @@ where
     } else {
         println!("{}", log);
     }
+    if !envs.is_empty() {
+        let log = format!("Env: {:?}", &envs,);
+        if let Some(l) = log_sender {
+            _ = l.send(log);
+        } else {
+            println!("{}", log);
+        }
+    }
     let mut command = Command::new(full_path);
+    command.envs(envs);
     command.args(arguments);
     #[cfg(target_os = "windows")]
     command.creation_flags(CREATE_NO_WINDOW);
