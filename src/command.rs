@@ -11,31 +11,32 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(target_os = "linux")]
-pub fn binary_to_path(binary_name: String) -> String {
-    return binary_name;
+pub fn binary_to_path(binary_name: String) -> PathBuf {
+    return PathBuf::from(binary_name);
 }
 
 #[cfg(target_os = "windows")]
-pub fn binary_to_path(binary_name: String) -> String {
-    if check_if_binary_exists(&binary_name) {
-        return binary_name;
+pub fn binary_to_path(binary_name: String) -> PathBuf {
+    let binary_path = PathBuf::from(binary_name.clone());
+    if check_if_binary_exists(&binary_path) {
+        return binary_path;
     }
     let mut current_path = std::env::current_exe().unwrap();
     current_path.pop();
-    let bin_dir = current_path.join("bin/");
+    let bin_dir = current_path.join("bin\\");
+    let full_path = bin_dir.join(format!("{binary_name}.exe"));
 
-    let prefix = bin_dir.to_str().unwrap();
-    let full_path = format!("{prefix}{binary_name}");
     if check_if_binary_exists(&full_path) {
         return full_path;
     }
-    return binary_name;
+    return binary_path;
 }
 
 #[cfg(target_os = "macos")]
-pub fn binary_to_path(binary_name: String) -> String {
-    if check_if_binary_exists(&binary_name) {
-        return binary_name;
+pub fn binary_to_path(binary_name: String) -> PathBuf {
+    let binary_path = PathBuf::from(binary_name.clone());
+    if check_if_binary_exists(&binary_path) {
+        return binary_path;
     }
     let mut current_path = std::env::current_exe().unwrap();
     current_path.pop();
@@ -50,20 +51,20 @@ pub fn binary_to_path(binary_name: String) -> String {
         "/usr/local/bin/",
     ];
     for prefix in usual_prefixes {
-        let full_path = format!("{prefix}{binary_name}");
+        let full_path = PathBuf::from(prefix).join(&binary_name);
         if check_if_binary_exists(&full_path) {
             return full_path;
         }
     }
-    return binary_name;
+    return binary_path;
 }
 
-pub fn check_if_binary_exists(path: &str) -> bool {
+pub fn check_if_binary_exists(path: &PathBuf) -> bool {
     let mut command = Command::new(path);
     #[cfg(target_os = "windows")]
     command.creation_flags(CREATE_NO_WINDOW);
     let output = command.output();
-    return output.is_ok();
+    return output.map_or(false, |o| o.status.success());
 }
 
 pub fn exec_command<I, S>(
@@ -94,7 +95,7 @@ where
     let full_path = binary_to_path(command.to_string());
     let log = format!(
         "Running: {} {}",
-        &full_path,
+        full_path.display(),
         &a.into_iter()
             .map(|s| s.as_ref().to_os_string().into_string().unwrap())
             .collect::<Vec<_>>()
