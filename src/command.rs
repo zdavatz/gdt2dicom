@@ -10,8 +10,25 @@ use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn binary_to_path(binary_name: String) -> String {
+    return binary_name;
+}
+
+#[cfg(target_os = "windows")]
+pub fn binary_to_path(binary_name: String) -> String {
+    if check_if_binary_exists(&binary_name) {
+        return binary_name;
+    }
+    let mut current_path = std::env::current_exe().unwrap();
+    current_path.pop();
+    let bin_dir = current_path.join("bin/");
+
+    let prefix = bin_dir.to_str().unwrap();
+    let full_path = format!("{prefix}{binary_name}");
+    if check_if_binary_exists(&full_path) {
+        return full_path;
+    }
     return binary_name;
 }
 
