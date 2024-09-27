@@ -112,6 +112,11 @@ jobs:
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmodify.exe ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmdump.exe ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dump2dcm.exe ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmxml.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmdata.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/oflog.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/ofstd.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/oficonv.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/share/dcmtk-*/dicom.dic ./gui-out/share/
 
           Compress-Archive -Path .\gui-out\* -Destination .\gdt2dicom-gui-win.zip
