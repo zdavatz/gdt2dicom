@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
+use gdt2dicom::command::check_if_binary_exists;
 use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
 use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use gdt2dicom::gdt::{parse_file, GdtError};
@@ -51,7 +52,7 @@ fn main() -> glib::ExitCode {
                 #[weak]
                 app,
                 move |_window: &ApplicationWindow, _, _| {
-                    open_copyright_dialog(app);
+                    open_copyright_dialog(&app);
                 }
             ))
             .build();
@@ -71,9 +72,35 @@ fn main() -> glib::ExitCode {
 
         window.set_child(Some(&grid_layout));
         window.present();
+
+        if cfg!(target_os = "linux") {
+            check_dcmtk_binaries(&window, &app);
+        }
     });
 
     return application.run();
+}
+
+fn check_dcmtk_binaries(window: &ApplicationWindow, app: &Application) {
+    let mut missing_binaries: Vec<String> = Vec::new();
+    let binaries = vec!["xml2dcm", "dcmodify", "dcmdump", "dump2dcm"];
+    for b in binaries {
+        let p = PathBuf::from(b);
+        if !check_if_binary_exists(&p) {
+            missing_binaries.push(b.to_string());
+        }
+    }
+    if !missing_binaries.is_empty() {
+        AlertDialog::builder()
+            .message("Error")
+            .detail(format!("Missing dependencies, please make sure you have dcmtk installed. The following binaries are not found: {}", missing_binaries.join(", ")))
+            .modal(true)
+            .build()
+            .choose(Some(window), None::<gtk::gio::Cancellable>.as_ref(), clone!(
+                #[weak]
+                app,move |_| app.quit())
+            );
+    }
 }
 
 fn open_about_dialog() {
@@ -90,7 +117,7 @@ fn open_about_dialog() {
     a.set_visible(true);
 }
 
-fn open_copyright_dialog(app: Application) {
+fn open_copyright_dialog(app: &Application) {
     let copyright_str = include_str!("../../COPYRIGHT");
     let text_view = TextView::builder().build();
     let buffer = text_view.buffer();
@@ -103,7 +130,7 @@ fn open_copyright_dialog(app: Application) {
         .build();
 
     let window = Window::builder()
-        .application(&app)
+        .application(app)
         .child(&scrolled_window)
         .title("Copyright")
         .default_width(400)
