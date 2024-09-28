@@ -292,10 +292,25 @@ fn convert_gdt_file(
     return Ok(filename);
 }
 
+#[cfg(target_os = "windows")]
+fn dicom_dic_path() -> PathBuf {
+    let mut current_path = std::env::current_exe().unwrap();
+    current_path.pop();
+    current_path.push("share");
+    current_path.push("dicom.dic");
+    return current_path;
+}
+
+#[cfg(target_os = "macos")]
 fn dicom_dic_path() -> PathBuf {
     let mut current_path = std::env::current_exe().unwrap();
     current_path.pop();
     return current_path.join("../Resources/share/dicom.dic");
+}
+
+#[cfg(target_os = "linux")]
+fn dicom_dic_path() -> PathBuf {
+    PathBuf::new()
 }
 
 fn modify_dcm_file(
@@ -325,7 +340,7 @@ fn modify_dcm_file(
         return Err(WorklistError::IoError(custom_error));
     }
 
-    let envs = if cfg!(target_os = "macos") {
+    let envs = if cfg!(not(target_os = "linux")) {
         vec![("DCMDICTPATH".to_string(), dicom_dic_path())]
     } else {
         vec![]
