@@ -67,8 +67,9 @@ fn main() -> glib::ExitCode {
             .margin_end(12)
             .build();
 
-        // let y = setup_simple_convert(&window, &grid_layout.clone(), 0);
-        setup_auto_convert_list_ui(&window.clone(), &grid_layout.clone(), 0);
+        let y = 0;
+        let y = setup_dicom_server(&window, &grid_layout.clone(), y);
+        setup_auto_convert_list_ui(&window.clone(), &grid_layout.clone(), y);
 
         window.set_child(Some(&grid_layout));
         window.present();
@@ -139,118 +140,55 @@ fn open_copyright_dialog(app: &Application) {
     window.present();
 }
 
-fn setup_simple_convert(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
-    let input_file_label = Label::new(Some("Input File"));
-    let input_entry = Entry::builder().hexpand(true).build();
-    let output_file_label = Label::new(Some("Output File"));
-    let output_entry = Entry::builder().hexpand(true).build();
+fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
+    let frame = Frame::builder()
+        .label("DICOM worklist server")
+        .vexpand(false)
+        .build();
 
-    grid.attach(&input_file_label, 0, 0, 1, 1);
-    grid.attach(&input_entry, 1, 0, 2, 1);
-    grid.attach(&output_file_label, 0, 1, 1, 1);
-    grid.attach(&output_entry, 1, 1, 2, 1);
+    let worklist_dir_label = Label::new(Some("DICOM worklist dir"));
+    let worklist_dir_entry = Entry::builder().hexpand(true).sensitive(false).build();
+    let worklist_dir_button = Button::builder().label("Choose...").build();
 
-    let input_button = Button::builder().label("Choose GDT file...").build();
-
-    let w2 = window.clone();
-    let input_entry2 = input_entry.clone();
-    input_button.connect_clicked(move |_| {
-        let input_entry3 = input_entry2.clone();
-        let ff = FileFilter::new();
-        ff.add_suffix("gdt");
-
-        let filters = ListStore::new::<FileFilter>();
-        filters.append(&ff);
-        let dialog = FileDialog::builder().filters(&filters).build();
-        dialog.open(
-            Some(&w2),
-            None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| match result {
-                Err(err) => {
-                    println!("err {:?}", err);
-                }
-                Ok(file) => {
-                    if let Some(input_path) = file.path() {
-                        if let Some(p) = input_path.to_str() {
-                            input_entry3.buffer().set_text(p);
-                        }
-                    }
-                }
-            },
-        );
-    });
-    grid.attach(&input_button, 3, grid_y_index, 1, 1);
-
-    let output_button = Button::builder().label("Choose WL path...").build();
-
-    let w3 = window.clone();
-    let output_entry2 = output_entry.clone();
-    output_button.connect_clicked(move |_| {
-        let output_entry3 = output_entry2.clone();
-        let ff = FileFilter::new();
-        ff.add_suffix("wl");
-
-        let filters = ListStore::new::<FileFilter>();
-        filters.append(&ff);
-        let dialog = FileDialog::builder().filters(&filters).build();
-        dialog.save(
-            Some(&w3),
-            None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| match result {
-                Err(err) => {
-                    println!("err {:?}", err);
-                }
-                Ok(file) => {
-                    if let Some(input_path) = file.path() {
-                        if let Some(p) = input_path.to_str() {
-                            output_entry3.buffer().set_text(p);
-                        }
-                    }
-                }
-            },
-        );
-    });
-    grid.attach(&output_button, 3, grid_y_index + 1, 1, 1);
-
+    let port_label = Label::new(Some("Port"));
+    let port_entry = Entry::builder().hexpand(true).build();
     let run_button = Button::builder().label("Run").build();
-    let input_entry4 = input_entry.clone();
-    let output_entry4 = output_entry.clone();
-    let w4 = window.clone();
-    run_button.connect_clicked(move |_| {
-        let input_text = input_entry4.buffer().text();
-        let output_text = output_entry4.buffer().text();
-        let input_path = Path::new(input_text.as_str());
-        let output_path = PathBuf::from(output_text.as_str());
-        let result = convert_gdt_file(&input_path, &output_path);
-        if let Err(err) = result {
-            AlertDialog::builder()
-                .message("Error")
-                .detail(err.to_string())
-                .modal(true)
-                .build()
-                .show(Some(&w4));
-        } else {
-            AlertDialog::builder()
-                .message("Success!")
-                .detail("File written")
-                .modal(true)
-                .build()
-                .show(Some(&w4));
-        }
-    });
-    grid.attach(&run_button, 3, grid_y_index + 2, 1, 1);
+    let status_label = Label::new(Some("Stopped"));
 
-    let separator = Separator::new(gtk::Orientation::Horizontal);
-    grid.attach(&separator, 0, grid_y_index + 3, 4, 1);
+    let log_text_view = TextView::builder().build();
+    let log_scroll_window = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .height_request(100)
+        .child(&log_text_view)
+        .build();
+    let log_expander = Expander::builder()
+        .label("Logs")
+        .resize_toplevel(true)
+        .child(&log_scroll_window)
+        .build();
 
-    return grid_y_index + 4;
-}
+    let grid_layout = Grid::builder()
+        .column_spacing(12)
+        .row_spacing(12)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
 
-fn convert_gdt_file(input_path: &Path, output_path: &PathBuf) -> Result<(), GdtError> {
-    let gdt_file = parse_file(input_path)?;
-    let xml_events = default_dcm_xml(DcmTransferType::LittleEndianExplicit);
-    let temp_file = file_to_xml(gdt_file, &xml_events).unwrap();
-    return Ok(dcm_xml_to_worklist(None, &temp_file.path(), output_path)?);
+    frame.set_child(Some(&grid_layout));
+    grid_layout.attach(&worklist_dir_label, 0, 0, 1, 1);
+    grid_layout.attach(&worklist_dir_entry, 1, 0, 1, 1);
+    grid_layout.attach(&worklist_dir_button, 2, 0, 1, 1);
+    grid_layout.attach(&port_label, 0, 1, 1, 1);
+    grid_layout.attach(&port_entry, 1, 1, 1, 1);
+    grid_layout.attach(&run_button, 0, 2, 1, 1);
+    grid_layout.attach(&status_label, 1, 2, 1, 1);
+    grid_layout.attach(&log_expander, 0, 3, 3, 1);
+
+    grid.attach(&frame, 0, grid_y_index, 4, 1);
+    return grid_y_index + 1;
 }
 
 fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
