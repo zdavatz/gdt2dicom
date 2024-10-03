@@ -1,7 +1,8 @@
 #![windows_subsystem = "windows"]
 
+use std::default::Default;
 use std::io::BufRead;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
@@ -68,9 +69,52 @@ fn main() -> glib::ExitCode {
             .margin_end(12)
             .build();
 
+        let saved_state = read_saved_states().unwrap_or_else(|err| {
+            println!("Error while restoring state: {:?}", err);
+            StateFile::default()
+        });
+
+        // TODO: make dicom_server non-optional when user upgraded from old save data
+        let dicom_server_state = &saved_state
+            .dicom_server
+            .clone()
+            .unwrap_or(DicomServerState::default());
+
         let y = 0;
-        let y = setup_dicom_server(&window, &grid_layout.clone(), y);
-        setup_auto_convert_list_ui(&window.clone(), &grid_layout.clone(), y);
+        let (y, dicom_server_state_receiver) =
+            setup_dicom_server(dicom_server_state, &window, &grid_layout.clone(), y);
+        let (_y, convert_list_state_receiver) = setup_auto_convert_list_ui(
+            &saved_state.conversions,
+            &window.clone(),
+            &grid_layout.clone(),
+            y,
+        );
+
+        let state_arc = Arc::new(Mutex::new(saved_state));
+
+        let state_arc1 = state_arc.clone();
+        runtime().spawn(async move {
+            while let Ok(dicom_server_state) = dicom_server_state_receiver.recv() {
+                let state = state_arc1.lock().unwrap();
+                let new_state = StateFile {
+                    dicom_server: Some(dicom_server_state),
+                    ..state.deref().clone()
+                };
+                _ = write_state_to_file(new_state);
+            }
+        });
+
+        let state_arc1 = state_arc.clone();
+        runtime().spawn(async move {
+            while let Ok(convert_list_state) = convert_list_state_receiver.recv() {
+                let state = state_arc1.lock().unwrap();
+                let new_state = StateFile {
+                    conversions: convert_list_state,
+                    ..state.deref().clone()
+                };
+                _ = write_state_to_file(new_state);
+            }
+        });
 
         window.set_child(Some(&grid_layout));
         window.present();
@@ -141,7 +185,13 @@ fn open_copyright_dialog(app: &Application) {
     window.present();
 }
 
-fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
+fn setup_dicom_server(
+    initial_state: &DicomServerState,
+    window: &ApplicationWindow,
+    grid: &Grid,
+    grid_y_index: i32,
+) -> (i32, mpsc::Receiver<DicomServerState>) {
+    let (state_sender, state_receiver) = mpsc::channel();
     let frame = Frame::builder()
         .label("DICOM worklist server")
         .vexpand(false)
@@ -215,6 +265,39 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
         }
     );
 
+    if let Some(p) = &initial_state.path {
+        worklist_dir_entry
+            .buffer()
+            .set_text(p.display().to_string());
+    }
+    if let Some(p) = &initial_state.port {
+        port_entry.buffer().set_text(p.to_string());
+    }
+
+    update_run_button();
+
+    let notify_state_update = clone!(
+        #[weak]
+        worklist_dir_entry,
+        #[weak]
+        port_entry,
+        move || {
+            let worklist_dir = worklist_dir_entry.buffer().text();
+            let port_str = port_entry.buffer().text();
+            let port_int = u16::from_str(port_str.as_str());
+            let state = DicomServerState {
+                path: if worklist_dir.len() > 0 {
+                    Some(PathBuf::from(worklist_dir.as_str()))
+                } else {
+                    None
+                },
+                port: port_int.ok(),
+            };
+            _ = state_sender.send(state);
+        }
+    );
+
+    let notify_state_update1 = notify_state_update.clone();
     let update_run_button1 = update_run_button.clone();
     worklist_dir_button.connect_clicked(clone!(
         #[weak]
@@ -223,6 +306,7 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
         worklist_dir_entry,
         move |_| {
             let update_run_button2 = update_run_button1.clone();
+            let notify_state_update1 = notify_state_update1.clone();
             let dialog = FileDialog::builder().build();
             dialog.select_folder(
                 Some(&window),
@@ -236,6 +320,7 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                             if let Some(p) = path.to_str() {
                                 worklist_dir_entry.buffer().set_text(p);
                                 update_run_button2();
+                                notify_state_update1();
                             }
                         }
                     }
@@ -249,15 +334,17 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
         .unwrap()
         .connect_insert_text(move |entry, text, position| {
             let pattern = |c: char| -> bool { !c.is_ascii_digit() };
-            if text.contains(pattern) {
+            if text.contains(pattern) || text.len() > 5 {
                 glib::signal::signal_stop_emission_by_name(entry, "insert-text");
                 entry.insert_text(&text.replace(pattern, ""), position);
             }
         });
 
     let update_run_button1 = update_run_button.clone();
+    let notify_state_update1 = notify_state_update.clone();
     port_entry.connect_changed(move |_| {
         update_run_button1();
+        notify_state_update1();
     });
 
     let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
@@ -429,10 +516,16 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
         }
     ));
 
-    return grid_y_index + 1;
+    return (grid_y_index + 1, state_receiver);
 }
 
-fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32) -> i32 {
+fn setup_auto_convert_list_ui(
+    initial_state: &WorklistConversionsState,
+    window: &ApplicationWindow,
+    grid: &Grid,
+    grid_y_index: i32,
+) -> (i32, mpsc::Receiver<WorklistConversionsState>) {
+    let (state_sender, state_receiver) = mpsc::channel();
     let worklist_conversions: Arc<Mutex<Vec<Arc<Mutex<WorklistConversion>>>>> =
         Arc::new(Mutex::new(vec![]));
     let conversion_scroll_window = ScrolledWindow::builder()
@@ -449,16 +542,17 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
         #[weak]
         worklist_conversions,
         move || {
+            let state_sender1 = state_sender.clone();
             spawn_future_local(clone!(
                 #[weak]
                 worklist_conversions,
                 async move {
                     let wcs = worklist_conversions.lock().unwrap();
-                    let all_states: Vec<WorklistConversionState> = wcs
+                    let all_states: WorklistConversionsState = wcs
                         .iter()
                         .map(|arc| arc.lock().unwrap().to_state())
                         .collect();
-                    _ = write_state_to_file(all_states);
+                    _ = state_sender1.send(all_states);
                 }
             ));
         }
@@ -469,7 +563,7 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     let add_new_worklist = clone!(
         #[weak]
         window,
-        move |state: Option<WorklistConversionState>| {
+        move |state: Option<&WorklistConversionState>| {
             let frame = Frame::new(Some("Worklist folder"));
             let on_delete = clone!(
                 #[weak]
@@ -495,33 +589,26 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     });
     grid.attach(&new_convertion_button, 3, grid_y_index + 1, 1, 1);
 
-    match read_saved_states() {
-        Err(err) => {
-            println!("Error while restoring state: {:?}", err);
-        }
-        Ok(saved_states) => {
-            for state in saved_states {
-                add_new_worklist(Some(state));
-            }
-        }
+    for state in initial_state {
+        add_new_worklist(Some(state));
     }
 
-    return grid_y_index + 2;
+    return (grid_y_index + 2, state_receiver);
 }
 
 fn setup_auto_convert_ui<F, G>(
     window: &ApplicationWindow,
     on_delete: F,
     on_updated: G,
-    saved_state: Option<WorklistConversionState>,
+    saved_state: Option<&WorklistConversionState>,
 ) -> (Grid, Arc<Mutex<WorklistConversion>>)
 where
     F: Fn() + 'static,
     G: Fn() + 'static + Clone,
 {
     let (sender, receiver) = mpsc::channel();
-    let worklist_conversion = if let Some(ref ss) = saved_state {
-        WorklistConversion::from_state(&ss, sender)
+    let worklist_conversion = if let Some(ss) = saved_state {
+        WorklistConversion::from_state(ss, sender)
     } else {
         Arc::new(Mutex::new(WorklistConversion::new(sender)))
     };
@@ -779,44 +866,61 @@ where
     return (grid_layout, worklist_conversion.clone());
 }
 
-#[derive(Serialize, Deserialize)]
+type WorklistConversionsState = Vec<WorklistConversionState>;
+
+#[derive(Clone, Serialize, Deserialize)]
 struct StateFile {
-    conversions: Vec<WorklistConversionState>,
+    conversions: WorklistConversionsState,
+    // Option for backward compatibility
+    dicom_server: Option<DicomServerState>,
 }
 
-fn write_state_to_file(
-    worklist_conversions: Vec<WorklistConversionState>,
-) -> Result<(), std::io::Error> {
-    let state_string = json!(StateFile {
-        conversions: worklist_conversions
-    })
-    .to_string();
+impl Default for StateFile {
+    fn default() -> StateFile {
+        StateFile {
+            conversions: Vec::new(),
+            dicom_server: Some(DicomServerState::default()),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct DicomServerState {
+    path: Option<PathBuf>,
+    port: Option<u16>,
+}
+
+impl Default for DicomServerState {
+    fn default() -> DicomServerState {
+        DicomServerState {
+            path: None,
+            port: None,
+        }
+    }
+}
+
+fn write_state_to_file(state: StateFile) -> Result<(), std::io::Error> {
+    let state_string = json!(state).to_string();
     let mut current_path = std::env::current_exe()?;
     current_path.set_file_name("state.json");
     std::fs::write(current_path, state_string)?;
     Ok(())
 }
 
-fn read_saved_states() -> Result<Vec<WorklistConversionState>, std::io::Error> {
+fn read_saved_states() -> Result<StateFile, std::io::Error> {
     let mut current_path = std::env::current_exe()?;
     current_path.set_file_name("state.json");
     if !current_path.is_file() {
-        return Ok(Vec::new());
+        return Ok(StateFile::default());
     }
     let data = std::fs::read(&current_path)?;
 
-    match serde_json::from_slice::<StateFile>(&data) {
-        Ok(v) => Ok(v.conversions),
-        Err(err) => {
-            AlertDialog::builder()
-                .message("Cannot read saved data")
-                .detail(err.to_string())
-                .modal(true)
-                .build()
-                .show(None::<&ApplicationWindow>);
-            Ok(Vec::new())
-        }
-    }
+    Ok(
+        serde_json::from_slice::<StateFile>(&data).unwrap_or_else(|err| {
+            println!("Restore error {:?}", err);
+            StateFile::default()
+        }),
+    )
 }
 
 fn runtime() -> &'static Runtime {

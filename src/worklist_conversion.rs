@@ -67,7 +67,7 @@ pub struct WorklistConversion {
     log_sender: mpsc::Sender<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorklistConversionState {
     pub input_dir_path: Option<PathBuf>,
     pub output_dir_path: Option<PathBuf>,
