@@ -190,8 +190,8 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
     grid_layout.attach(&worklist_dir_button, 2, 0, 1, 1);
     grid_layout.attach(&port_label, 0, 1, 1, 1);
     grid_layout.attach(&port_entry, 1, 1, 1, 1);
+    grid_layout.attach(&status_label, 2, 1, 1, 1);
     grid_layout.attach(&run_button, 0, 2, 1, 1);
-    grid_layout.attach(&status_label, 1, 2, 1, 1);
     grid_layout.attach(&log_expander, 0, 3, 3, 1);
 
     grid.attach(&frame, 0, grid_y_index, 4, 1);
@@ -324,9 +324,14 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                 buffer.insert(&mut buffer.end_iter(), "Killed process");
                 buffer.insert(&mut buffer.end_iter(), "\n");
             } else {
-                let (sender, receiver) = mpsc::channel();
                 // TODO: find path
                 let mut command = Command::new("wlmscpfs");
+                #[derive(Debug)]
+                enum ChildOutput {
+                    Log(String),
+                    Exit(std::process::ExitStatus),
+                }
+                let (sender, receiver) = mpsc::channel::<ChildOutput>();
                 command
                     .args(vec![
                         "-v",
@@ -339,7 +344,7 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped());
 
-                _ = sender.send(format!("Running command: {:?}", command));
+                _ = sender.send(ChildOutput::Log(format!("Running command: {:?}", command)));
 
                 let child = shared_child::SharedChild::spawn(&mut command).expect("spawn shared");
                 let stdout = child.take_stdout().expect("stdout");
@@ -350,7 +355,7 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                 runtime().spawn(async move {
                     for line in err_reader.lines() {
                         if let Ok(msg) = line {
-                            _ = err_sender.send(msg);
+                            _ = err_sender.send(ChildOutput::Log(msg));
                         }
                     }
                 });
@@ -360,25 +365,40 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                 runtime().spawn(async move {
                     for line in out_reader.lines() {
                         if let Ok(msg) = line {
-                            _ = out_sender.send(msg);
+                            _ = out_sender.send(ChildOutput::Log(msg));
                         }
                     }
                 });
 
-                let (asender, arecv) = async_channel::unbounded();
+                let (asender, arecv) = async_channel::unbounded::<ChildOutput>();
                 runtime().spawn(async move {
                     while let Ok(msg) = receiver.recv() {
                         _ = asender.send(msg).await;
                     }
                 });
 
-                spawn_future_local(async move {
-                    while let Ok(msg) = arecv.recv().await {
-                        let buffer = log_text_view.buffer();
-                        buffer.insert(&mut buffer.end_iter(), &msg);
-                        buffer.insert(&mut buffer.end_iter(), "\n");
+                let update_run_status1 = update_run_status.clone();
+                spawn_future_local(clone!(
+                    #[weak]
+                    running_child,
+                    async move {
+                        while let Ok(msg) = arecv.recv().await {
+                            let buffer = log_text_view.buffer();
+                            match msg {
+                                ChildOutput::Log(msg) => {
+                                    buffer.insert(&mut buffer.end_iter(), &msg);
+                                }
+                                ChildOutput::Exit(_exit_status) => {
+                                    let mut rc = running_child.lock().unwrap();
+                                    *rc = None;
+                                    print!("ChildOutput::Exit");
+                                    update_run_status1();
+                                }
+                            }
+                            buffer.insert(&mut buffer.end_iter(), "\n");
+                        }
                     }
-                });
+                ));
 
                 let arc_child = Arc::new(child);
 
@@ -386,7 +406,8 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                 let exit_sender = sender.clone();
                 runtime().spawn(async move {
                     let exit_result = child1.wait().expect("wait");
-                    _ = exit_sender.send(format!("Exited {:?}", exit_result));
+                    _ = exit_sender.send(ChildOutput::Log(format!("Exited {:?}", exit_result)));
+                    _ = exit_sender.send(ChildOutput::Exit(exit_result));
                 });
                 *rc = Some(arc_child);
             }
@@ -403,7 +424,7 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     let conversion_scroll_window = ScrolledWindow::builder()
         .hexpand(true)
         .vexpand(true)
-        .height_request(400)
+        .height_request(300)
         .build();
     grid.attach(&conversion_scroll_window, 0, grid_y_index, 4, 1);
 
