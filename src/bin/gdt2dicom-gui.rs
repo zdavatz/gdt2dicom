@@ -430,11 +430,10 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     );
 
     let new_convertion_button = Button::builder().label("Add new worklist folder").build();
+    let worklist_conversions1 = worklist_conversions.clone();
     let add_new_worklist = clone!(
         #[weak]
         window,
-        #[weak]
-        worklist_conversions,
         move |state: Option<WorklistConversionState>| {
             let frame = Frame::new(Some("Worklist folder"));
             let on_delete = clone!(
@@ -449,7 +448,7 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
 
             let (this_ui, wc) =
                 setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), state);
-            let mut cs = worklist_conversions.lock().unwrap();
+            let mut cs = worklist_conversions1.lock().unwrap();
             cs.push(wc);
             frame.set_child(Some(&this_ui));
             box1.append(&frame);
