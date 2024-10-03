@@ -7,7 +7,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
-use gdt2dicom::command::check_if_binary_exists;
+use gdt2dicom::command::{binary_to_path, check_if_binary_exists};
 use gdt2dicom::worklist_conversion::{WorklistConversion, WorklistConversionState};
 use gtk::gio::prelude::FileExt;
 use gtk::gio::{ActionEntry, Menu};
@@ -300,6 +300,8 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
 
     run_button.connect_clicked(clone!(
         #[weak]
+        window,
+        #[weak]
         worklist_dir_entry,
         #[weak]
         port_entry,
@@ -324,14 +326,15 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
                 buffer.insert(&mut buffer.end_iter(), "Killed process");
                 buffer.insert(&mut buffer.end_iter(), "\n");
             } else {
-                // TODO: find path
-                let mut command = Command::new("wlmscpfs");
                 #[derive(Debug)]
                 enum ChildOutput {
                     Log(String),
                     Exit(std::process::ExitStatus),
                 }
                 let (sender, receiver) = mpsc::channel::<ChildOutput>();
+
+                let full_path = binary_to_path("wlmscpfs".to_string());
+                let mut command = Command::new(full_path);
                 command
                     .args(vec![
                         "-v",
@@ -346,7 +349,18 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
 
                 _ = sender.send(ChildOutput::Log(format!("Running command: {:?}", command)));
 
-                let child = shared_child::SharedChild::spawn(&mut command).expect("spawn shared");
+                let child = match shared_child::SharedChild::spawn(&mut command) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        AlertDialog::builder()
+                            .message("Error")
+                            .detail(err.to_string())
+                            .modal(true)
+                            .build()
+                            .show(Some(&window));
+                        return;
+                    }
+                };
                 let stdout = child.take_stdout().expect("stdout");
                 let stderr = child.take_stderr().expect("stderr");
 
