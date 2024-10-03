@@ -1,20 +1,21 @@
 #![windows_subsystem = "windows"]
 
-use std::path::{Path, PathBuf};
+use std::io::BufRead;
+use std::ops::DerefMut;
+use std::path::PathBuf;
+use std::process::Command;
+use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use gdt2dicom::command::check_if_binary_exists;
-use gdt2dicom::dcm_worklist::dcm_xml_to_worklist;
-use gdt2dicom::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
-use gdt2dicom::gdt::{parse_file, GdtError};
 use gdt2dicom::worklist_conversion::{WorklistConversion, WorklistConversionState};
 use gtk::gio::prelude::FileExt;
-use gtk::gio::{ActionEntry, ListStore, Menu};
+use gtk::gio::{ActionEntry, Menu};
 use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
 use gtk::{
     glib, AboutDialog, AlertDialog, Application, ApplicationWindow, Button, Entry, Expander,
-    FileDialog, FileFilter, Frame, Grid, Label, ScrolledWindow, Separator, TextView, Window,
+    FileDialog, Frame, Grid, Label, ScrolledWindow, Separator, TextView, Window,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -146,13 +147,19 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
         .vexpand(false)
         .build();
 
-    let worklist_dir_label = Label::new(Some("DICOM worklist dir"));
+    let worklist_dir_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("DICOM worklist dir")
+        .build();
     let worklist_dir_entry = Entry::builder().hexpand(true).sensitive(false).build();
     let worklist_dir_button = Button::builder().label("Choose...").build();
 
-    let port_label = Label::new(Some("Port"));
+    let port_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("Port")
+        .build();
     let port_entry = Entry::builder().hexpand(true).build();
-    let run_button = Button::builder().label("Run").build();
+    let run_button = Button::builder().label("Run").sensitive(false).build();
     let status_label = Label::new(Some("Stopped"));
 
     let log_text_view = TextView::builder().build();
@@ -188,6 +195,205 @@ fn setup_dicom_server(window: &ApplicationWindow, grid: &Grid, grid_y_index: i32
     grid_layout.attach(&log_expander, 0, 3, 3, 1);
 
     grid.attach(&frame, 0, grid_y_index, 4, 1);
+
+    let update_run_button = clone!(
+        #[weak]
+        worklist_dir_entry,
+        #[weak]
+        port_entry,
+        #[weak]
+        run_button,
+        move || {
+            let worklist_dir = worklist_dir_entry.buffer().text();
+            let port_str = port_entry.buffer().text();
+            let port_int = u16::from_str(port_str.as_str());
+            if worklist_dir.len() > 0 && port_int.is_ok() {
+                run_button.set_sensitive(true);
+            } else {
+                run_button.set_sensitive(false);
+            }
+        }
+    );
+
+    let update_run_button1 = update_run_button.clone();
+    worklist_dir_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        worklist_dir_entry,
+        move |_| {
+            let update_run_button2 = update_run_button1.clone();
+            let dialog = FileDialog::builder().build();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                move |result| match result {
+                    Err(err) => {
+                        println!("err {:?}", err);
+                    }
+                    Ok(file) => {
+                        if let Some(path) = file.path() {
+                            if let Some(p) = path.to_str() {
+                                worklist_dir_entry.buffer().set_text(p);
+                                update_run_button2();
+                            }
+                        }
+                    }
+                },
+            );
+        }
+    ));
+
+    port_entry
+        .delegate()
+        .unwrap()
+        .connect_insert_text(move |entry, text, position| {
+            let pattern = |c: char| -> bool { !c.is_ascii_digit() };
+            if text.contains(pattern) {
+                glib::signal::signal_stop_emission_by_name(entry, "insert-text");
+                entry.insert_text(&text.replace(pattern, ""), position);
+            }
+        });
+
+    let update_run_button1 = update_run_button.clone();
+    port_entry.connect_changed(move |_| {
+        update_run_button1();
+    });
+
+    let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
+        Arc::new(Mutex::new(None));
+
+    let update_run_status = clone!(
+        #[weak]
+        run_button,
+        #[weak]
+        status_label,
+        #[weak]
+        port_entry,
+        #[weak]
+        running_child,
+        move || {
+            spawn_future_local(clone!(
+                #[weak]
+                run_button,
+                #[weak]
+                status_label,
+                #[weak]
+                port_entry,
+                #[weak]
+                running_child,
+                async move {
+                    let rc = running_child.lock().unwrap();
+                    if rc.is_some() {
+                        run_button.set_label("Stop");
+                        status_label.set_label("Running");
+                        port_entry.set_sensitive(false);
+                    } else {
+                        run_button.set_label("Run");
+                        status_label.set_label("Stopped");
+                        port_entry.set_sensitive(true);
+                    }
+                }
+            ));
+        }
+    );
+
+    run_button.connect_clicked(clone!(
+        #[weak]
+        worklist_dir_entry,
+        #[weak]
+        port_entry,
+        #[weak]
+        log_text_view,
+        move |_| {
+            let worklist_dir = worklist_dir_entry.buffer().text();
+            if worklist_dir.len() == 0 {
+                return;
+            }
+            let port_str = port_entry.buffer().text();
+            let port_int = match u16::from_str(port_str.as_str()) {
+                Err(_) => return,
+                Ok(a) => a,
+            };
+
+            let mut rc = running_child.lock().unwrap();
+            if let Some(ref mut child) = rc.deref_mut() {
+                _ = child.kill();
+                *rc = None;
+                let buffer = log_text_view.buffer();
+                buffer.insert(&mut buffer.end_iter(), "Killed process");
+                buffer.insert(&mut buffer.end_iter(), "\n");
+            } else {
+                let (sender, receiver) = mpsc::channel();
+                // TODO: find path
+                let mut command = Command::new("wlmscpfs");
+                command
+                    .args(vec![
+                        "-v",
+                        "-d",
+                        "-dfr",
+                        "-dfp",
+                        worklist_dir.as_str(),
+                        &format!("{}", port_int),
+                    ])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+
+                _ = sender.send(format!("Running command: {:?}", command));
+
+                let child = shared_child::SharedChild::spawn(&mut command).expect("spawn shared");
+                let stdout = child.take_stdout().expect("stdout");
+                let stderr = child.take_stderr().expect("stderr");
+
+                let err_reader = std::io::BufReader::new(stderr);
+                let err_sender = sender.clone();
+                runtime().spawn(async move {
+                    for line in err_reader.lines() {
+                        if let Ok(msg) = line {
+                            _ = err_sender.send(msg);
+                        }
+                    }
+                });
+
+                let out_reader = std::io::BufReader::new(stdout);
+                let out_sender = sender.clone();
+                runtime().spawn(async move {
+                    for line in out_reader.lines() {
+                        if let Ok(msg) = line {
+                            _ = out_sender.send(msg);
+                        }
+                    }
+                });
+
+                let (asender, arecv) = async_channel::unbounded();
+                runtime().spawn(async move {
+                    while let Ok(msg) = receiver.recv() {
+                        _ = asender.send(msg).await;
+                    }
+                });
+
+                spawn_future_local(async move {
+                    while let Ok(msg) = arecv.recv().await {
+                        let buffer = log_text_view.buffer();
+                        buffer.insert(&mut buffer.end_iter(), &msg);
+                        buffer.insert(&mut buffer.end_iter(), "\n");
+                    }
+                });
+
+                let arc_child = Arc::new(child);
+
+                let child1 = arc_child.clone();
+                let exit_sender = sender.clone();
+                runtime().spawn(async move {
+                    let exit_result = child1.wait().expect("wait");
+                    _ = exit_sender.send(format!("Exited {:?}", exit_result));
+                });
+                *rc = Some(arc_child);
+            }
+            update_run_status();
+        }
+    ));
+
     return grid_y_index + 1;
 }
 
@@ -204,24 +410,31 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
     let box1 = gtk::Box::new(gtk::Orientation::Vertical, 12);
     conversion_scroll_window.set_child(Some(&box1));
 
-    let wcs1 = worklist_conversions.clone();
-    let on_updated = move || {
-        let wcs1 = wcs1.clone();
-        spawn_future_local(async move {
-            let wcs = wcs1.lock().unwrap();
-            let all_states: Vec<WorklistConversionState> = wcs
-                .iter()
-                .map(|arc| arc.lock().unwrap().to_state())
-                .collect();
-            _ = write_state_to_file(all_states);
-        });
-    };
+    let on_updated = clone!(
+        #[weak]
+        worklist_conversions,
+        move || {
+            spawn_future_local(clone!(
+                #[weak]
+                worklist_conversions,
+                async move {
+                    let wcs = worklist_conversions.lock().unwrap();
+                    let all_states: Vec<WorklistConversionState> = wcs
+                        .iter()
+                        .map(|arc| arc.lock().unwrap().to_state())
+                        .collect();
+                    _ = write_state_to_file(all_states);
+                }
+            ));
+        }
+    );
 
     let new_convertion_button = Button::builder().label("Add new worklist folder").build();
-    let wcs2 = worklist_conversions.clone();
     let add_new_worklist = clone!(
         #[weak]
         window,
+        #[weak]
+        worklist_conversions,
         move |state: Option<WorklistConversionState>| {
             let frame = Frame::new(Some("Worklist folder"));
             let on_delete = clone!(
@@ -236,7 +449,7 @@ fn setup_auto_convert_list_ui(window: &ApplicationWindow, grid: &Grid, grid_y_in
 
             let (this_ui, wc) =
                 setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), state);
-            let mut cs = wcs2.lock().unwrap();
+            let mut cs = worklist_conversions.lock().unwrap();
             cs.push(wc);
             frame.set_child(Some(&this_ui));
             box1.append(&frame);
@@ -279,7 +492,10 @@ where
         Arc::new(Mutex::new(WorklistConversion::new(sender)))
     };
 
-    let input_file_label = Label::new(Some("Input Folder"));
+    let input_file_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("Input Folder")
+        .build();
     let input_entry = Entry::builder().hexpand(true).sensitive(false).build();
     let input_button = Button::builder()
         .width_request(100)
@@ -287,7 +503,10 @@ where
         .label("Choose...")
         .build();
 
-    let output_file_label = Label::new(Some("Output Folder"));
+    let output_file_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("Output Folder")
+        .build();
     let output_entry = Entry::builder().hexpand(true).sensitive(false).build();
     let output_button = Button::builder()
         .width_request(100)
@@ -295,9 +514,15 @@ where
         .label("Choose...")
         .build();
 
-    let aetitle_label = Label::new(Some("AETitle"));
+    let aetitle_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("AETitle")
+        .build();
     let aetitle_entry = Entry::builder().hexpand(true).build();
-    let modality_label = Label::new(Some("Modality"));
+    let modality_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("Modality")
+        .build();
     let modality_entry = Entry::builder().hexpand(true).build();
 
     if let Some(ss) = saved_state {
@@ -358,104 +583,132 @@ where
     grid_layout.attach(&log_expander, 0, 4, 4, 1);
     grid_layout.attach(&remove_button, 3, 5, 1, 1);
 
-    let w2 = window.clone();
-    let input_entry2 = input_entry.clone();
-    let wc1 = worklist_conversion.clone();
     let on_updated2 = on_updated.clone();
-    input_button.connect_clicked(move |_| {
-        let input_entry3 = input_entry2.clone();
-        let dialog = FileDialog::builder().build();
-        let wc2 = wc1.clone();
-        let w3 = w2.clone();
-        let on_updated2 = on_updated2.clone();
-        dialog.select_folder(
-            Some(&w2),
-            None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| match result {
-                Err(err) => {
-                    println!("err {:?}", err);
-                }
-                Ok(file) => {
-                    if let Some(input_path) = file.path() {
-                        if let Some(p) = input_path.to_str() {
-                            input_entry3.buffer().set_text(p);
-                            if let std::sync::LockResult::Ok(mut wc) = wc2.lock() {
-                                let wc3 = wc2.clone();
-                                let result = wc.set_input_dir_path(Some(PathBuf::from(p)), wc3);
-                                match result {
-                                    Ok(()) => {
-                                        on_updated2();
-                                    }
-                                    Err(err) => {
-                                        AlertDialog::builder()
-                                            .message("Error")
-                                            .detail(err.to_string())
-                                            .modal(true)
-                                            .build()
-                                            .show(Some(&w3));
+    input_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        input_entry,
+        #[weak]
+        worklist_conversion,
+        move |_| {
+            let dialog = FileDialog::builder().build();
+            let on_updated2 = on_updated2.clone();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                clone!(
+                    #[weak]
+                    window,
+                    #[weak]
+                    input_entry,
+                    #[weak]
+                    worklist_conversion,
+                    move |result| match result {
+                        Err(err) => {
+                            println!("err {:?}", err);
+                        }
+                        Ok(file) => {
+                            if let Some(input_path) = file.path() {
+                                if let Some(p) = input_path.to_str() {
+                                    input_entry.buffer().set_text(p);
+                                    if let std::sync::LockResult::Ok(mut wc) =
+                                        worklist_conversion.lock()
+                                    {
+                                        let result = wc.set_input_dir_path(
+                                            Some(PathBuf::from(p)),
+                                            worklist_conversion.clone(),
+                                        );
+                                        match result {
+                                            Ok(()) => {
+                                                on_updated2();
+                                            }
+                                            Err(err) => {
+                                                AlertDialog::builder()
+                                                    .message("Error")
+                                                    .detail(err.to_string())
+                                                    .modal(true)
+                                                    .build()
+                                                    .show(Some(&window));
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            },
-        );
-    });
+                    },
+                ),
+            );
+        }
+    ));
 
-    let w3 = window.clone();
-    let output_entry2 = output_entry.clone();
-    let wc3 = worklist_conversion.clone();
     let on_updated2 = on_updated.clone();
-    output_button.connect_clicked(move |_| {
-        let output_entry3 = output_entry2.clone();
-        let dialog = FileDialog::builder().build();
-        let wc4 = wc3.clone();
-        let on_updated2 = on_updated2.clone();
-        dialog.select_folder(
-            Some(&w3),
-            None::<gtk::gio::Cancellable>.as_ref(),
-            move |result| match result {
-                Err(err) => {
-                    println!("err {:?}", err);
-                }
-                Ok(file) => {
-                    if let Some(input_path) = file.path() {
-                        if let Some(p) = input_path.to_str() {
-                            output_entry3.buffer().set_text(p);
-                            if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
-                                wc.output_dir_path = Some(PathBuf::from(p));
-                                on_updated2();
+    output_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        output_entry,
+        #[weak]
+        worklist_conversion,
+        move |_| {
+            let dialog = FileDialog::builder().build();
+            let on_updated2 = on_updated2.clone();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                clone!(
+                    #[weak]
+                    output_entry,
+                    move |result| match result {
+                        Err(err) => {
+                            println!("err {:?}", err);
+                        }
+                        Ok(file) => {
+                            if let Some(input_path) = file.path() {
+                                if let Some(p) = input_path.to_str() {
+                                    output_entry.buffer().set_text(p);
+                                    if let std::sync::LockResult::Ok(mut wc) =
+                                        worklist_conversion.lock()
+                                    {
+                                        wc.output_dir_path = Some(PathBuf::from(p));
+                                        on_updated2();
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            },
-        );
-    });
-
-    let wc4 = worklist_conversion.clone();
-    let ae = aetitle_entry.clone();
-    let on_updated2 = on_updated.clone();
-    aetitle_entry.connect_changed(move |_| {
-        if let std::sync::LockResult::Ok(mut wc) = wc4.lock() {
-            let text = ae.buffer().text().as_str().to_string();
-            wc.set_aetitle_string(text);
-            on_updated2();
+                    },
+                ),
+            );
         }
-    });
+    ));
 
-    let wc5 = worklist_conversion.clone();
+    let on_updated2 = on_updated.clone();
+    aetitle_entry.connect_changed(clone!(
+        #[weak]
+        worklist_conversion,
+        #[weak]
+        aetitle_entry,
+        move |_| {
+            if let std::sync::LockResult::Ok(mut wc) = worklist_conversion.lock() {
+                let text = aetitle_entry.buffer().text().as_str().to_string();
+                wc.set_aetitle_string(text);
+                on_updated2();
+            };
+        }
+    ));
+
     let on_updated2 = on_updated.clone();
     modality_entry.connect_changed(clone!(
         #[weak]
         modality_entry,
+        #[weak]
+        worklist_conversion,
         move |_| {
-            if let std::sync::LockResult::Ok(mut wc) = wc5.lock() {
+            if let std::sync::LockResult::Ok(mut wc) = worklist_conversion.lock() {
                 let text = modality_entry.buffer().text().as_str().to_string();
                 wc.set_modality_string(text);
                 on_updated2();
-            }
+            };
         }
     ));
 
@@ -478,13 +731,16 @@ where
         }
     ));
 
-    let wc6 = worklist_conversion.clone();
-    remove_button.connect_clicked(move |_| {
-        on_delete();
-        if let std::sync::LockResult::Ok(mut wc) = wc6.lock() {
-            wc.unwatch_input_dir();
+    remove_button.connect_clicked(clone!(
+        #[weak]
+        worklist_conversion,
+        move |_| {
+            on_delete();
+            if let std::sync::LockResult::Ok(mut wc) = worklist_conversion.lock() {
+                wc.unwatch_input_dir();
+            };
         }
-    });
+    ));
 
     return (grid_layout, worklist_conversion.clone());
 }
