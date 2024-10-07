@@ -80,14 +80,30 @@ fn main() -> glib::ExitCode {
             .clone()
             .unwrap_or(DicomServerState::default());
 
+        let on_output_path_updated = move || {
+            // TODO: save state
+        };
         let y = 0;
-        let (y, dicom_server_state_receiver) =
-            setup_dicom_server(dicom_server_state, &window, &grid_layout.clone(), y);
+        let (y, output_dir_arc) = setup_output_folder_ui(
+            &saved_state.output_path,
+            &window,
+            &grid_layout.clone(),
+            y,
+            on_output_path_updated,
+        );
+        let (y, dicom_server_state_receiver) = setup_dicom_server(
+            dicom_server_state,
+            &window,
+            &grid_layout.clone(),
+            y,
+            output_dir_arc.clone(),
+        );
         let (_y, convert_list_state_receiver) = setup_auto_convert_list_ui(
             &saved_state.conversions,
             &window.clone(),
             &grid_layout.clone(),
             y,
+            output_dir_arc.clone(),
         );
 
         let state_arc = Arc::new(Mutex::new(saved_state));
@@ -185,11 +201,77 @@ fn open_copyright_dialog(app: &Application) {
     window.present();
 }
 
+fn setup_output_folder_ui<F>(
+    initial_state: &Option<PathBuf>,
+    window: &ApplicationWindow,
+    grid: &Grid,
+    grid_y_index: i32,
+    on_updated: F,
+) -> (i32, Arc<Mutex<Option<PathBuf>>>)
+where
+    F: Fn() + 'static + Clone,
+{
+    let output_file_label = Label::builder()
+        .halign(gtk::Align::End)
+        .label("Output Folder")
+        .build();
+    let output_entry = Entry::builder().hexpand(true).sensitive(false).build();
+    let output_button = Button::builder()
+        .width_request(100)
+        .hexpand(false)
+        .label("Choose...")
+        .build();
+
+    grid.attach(&output_file_label, 0, grid_y_index, 1, 1);
+    grid.attach(&output_entry, 1, grid_y_index, 2, 1);
+    grid.attach(&output_button, 3, grid_y_index, 1, 1);
+
+    let output_dir_arc = Arc::new(Mutex::new(None::<PathBuf>));
+    let output_dir_arc2 = output_dir_arc.clone();
+    output_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        output_entry,
+        move |_| {
+            let dialog = FileDialog::builder().build();
+            let on_updated2 = on_updated.clone();
+            let output_dir_arc2 = output_dir_arc2.clone();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                clone!(
+                    #[weak]
+                    output_entry,
+                    move |result| match result {
+                        Err(err) => {
+                            println!("err {:?}", err);
+                        }
+                        Ok(file) => {
+                            if let Some(input_path) = file.path() {
+                                if let Some(p) = input_path.to_str() {
+                                    output_entry.buffer().set_text(p);
+                                    let mut output_dir = output_dir_arc2.lock().unwrap();
+                                    *output_dir = Some(PathBuf::from(p));
+                                    on_updated2();
+                                }
+                            }
+                        }
+                    },
+                ),
+            );
+        }
+    ));
+
+    return (grid_y_index + 1, output_dir_arc);
+}
+
 fn setup_dicom_server(
     initial_state: &DicomServerState,
     window: &ApplicationWindow,
     grid: &Grid,
     grid_y_index: i32,
+    output_dir_arc: Arc<Mutex<Option<PathBuf>>>,
 ) -> (i32, mpsc::Receiver<DicomServerState>) {
     let (state_sender, state_receiver) = mpsc::channel();
     let frame = Frame::builder()
@@ -197,12 +279,6 @@ fn setup_dicom_server(
         .vexpand(false)
         .build();
 
-    let worklist_dir_label = Label::builder()
-        .halign(gtk::Align::End)
-        .label("DICOM worklist dir")
-        .build();
-    let worklist_dir_entry = Entry::builder().hexpand(true).sensitive(false).build();
-    let worklist_dir_button = Button::builder().label("Choose...").build();
 
     let port_label = Label::builder()
         .halign(gtk::Align::End)
@@ -235,29 +311,26 @@ fn setup_dicom_server(
         .build();
 
     frame.set_child(Some(&grid_layout));
-    grid_layout.attach(&worklist_dir_label, 0, 0, 1, 1);
-    grid_layout.attach(&worklist_dir_entry, 1, 0, 1, 1);
-    grid_layout.attach(&worklist_dir_button, 2, 0, 1, 1);
-    grid_layout.attach(&port_label, 0, 1, 1, 1);
-    grid_layout.attach(&port_entry, 1, 1, 1, 1);
-    grid_layout.attach(&status_label, 2, 1, 1, 1);
-    grid_layout.attach(&run_button, 0, 2, 1, 1);
-    grid_layout.attach(&log_expander, 0, 3, 3, 1);
+    grid_layout.attach(&port_label, 0, 0, 1, 1);
+    grid_layout.attach(&port_entry, 1, 0, 1, 1);
+    grid_layout.attach(&status_label, 1, 1, 1, 1);
+    grid_layout.attach(&run_button, 0, 1, 1, 1);
+    grid_layout.attach(&log_expander, 0, 2, 3, 1);
 
     grid.attach(&frame, 0, grid_y_index, 4, 1);
 
     let update_run_button = clone!(
         #[weak]
-        worklist_dir_entry,
+        output_dir_arc,
         #[weak]
         port_entry,
         #[weak]
         run_button,
         move || {
-            let worklist_dir = worklist_dir_entry.buffer().text();
+            let worklist_dir = output_dir_arc.lock().unwrap();
             let port_str = port_entry.buffer().text();
             let port_int = u16::from_str(port_str.as_str());
-            if worklist_dir.len() > 0 && port_int.is_ok() {
+            if worklist_dir.is_some() && port_int.is_ok() {
                 run_button.set_sensitive(true);
             } else {
                 run_button.set_sensitive(false);
@@ -265,11 +338,6 @@ fn setup_dicom_server(
         }
     );
 
-    if let Some(p) = &initial_state.path {
-        worklist_dir_entry
-            .buffer()
-            .set_text(p.display().to_string());
-    }
     if let Some(p) = &initial_state.port {
         port_entry.buffer().set_text(p.to_string());
     }
@@ -278,56 +346,17 @@ fn setup_dicom_server(
 
     let notify_state_update = clone!(
         #[weak]
-        worklist_dir_entry,
-        #[weak]
         port_entry,
         move || {
-            let worklist_dir = worklist_dir_entry.buffer().text();
             let port_str = port_entry.buffer().text();
             let port_int = u16::from_str(port_str.as_str());
             let state = DicomServerState {
-                path: if worklist_dir.len() > 0 {
-                    Some(PathBuf::from(worklist_dir.as_str()))
-                } else {
-                    None
-                },
                 port: port_int.ok(),
             };
             _ = state_sender.send(state);
         }
     );
 
-    let notify_state_update1 = notify_state_update.clone();
-    let update_run_button1 = update_run_button.clone();
-    worklist_dir_button.connect_clicked(clone!(
-        #[weak]
-        window,
-        #[weak]
-        worklist_dir_entry,
-        move |_| {
-            let update_run_button2 = update_run_button1.clone();
-            let notify_state_update1 = notify_state_update1.clone();
-            let dialog = FileDialog::builder().build();
-            dialog.select_folder(
-                Some(&window),
-                None::<gtk::gio::Cancellable>.as_ref(),
-                move |result| match result {
-                    Err(err) => {
-                        println!("err {:?}", err);
-                    }
-                    Ok(file) => {
-                        if let Some(path) = file.path() {
-                            if let Some(p) = path.to_str() {
-                                worklist_dir_entry.buffer().set_text(p);
-                                update_run_button2();
-                                notify_state_update1();
-                            }
-                        }
-                    }
-                },
-            );
-        }
-    ));
 
     port_entry
         .delegate()
@@ -389,16 +418,19 @@ fn setup_dicom_server(
         #[weak]
         window,
         #[weak]
-        worklist_dir_entry,
+        output_dir_arc,
         #[weak]
         port_entry,
         #[weak]
         log_text_view,
         move |_| {
-            let worklist_dir = worklist_dir_entry.buffer().text();
-            if worklist_dir.len() == 0 {
-                return;
-            }
+            let o_worklist_dir = output_dir_arc.lock().unwrap();
+            let worklist_dir = match o_worklist_dir.deref() {
+                Some(a) => a,
+                None => {
+                    return;
+                }
+            };
             let port_str = port_entry.buffer().text();
             let port_int = match u16::from_str(port_str.as_str()) {
                 Err(_) => return,
@@ -428,7 +460,7 @@ fn setup_dicom_server(
                         "-d",
                         "-dfr",
                         "-dfp",
-                        worklist_dir.as_str(),
+                        worklist_dir.to_str().unwrap(),
                         &format!("{}", port_int),
                     ])
                     .stdout(std::process::Stdio::piped())
@@ -524,6 +556,7 @@ fn setup_auto_convert_list_ui(
     window: &ApplicationWindow,
     grid: &Grid,
     grid_y_index: i32,
+    output_dir_arc: Arc<Mutex<Option<PathBuf>>>,
 ) -> (i32, mpsc::Receiver<WorklistConversionsState>) {
     let (state_sender, state_receiver) = mpsc::channel();
     let worklist_conversions: Arc<Mutex<Vec<Arc<Mutex<WorklistConversion>>>>> =
@@ -563,6 +596,8 @@ fn setup_auto_convert_list_ui(
     let add_new_worklist = clone!(
         #[weak]
         window,
+        #[weak]
+        output_dir_arc,
         move |state: Option<&WorklistConversionState>| {
             let frame = Frame::new(Some("Worklist folder"));
             let on_delete = clone!(
@@ -575,8 +610,13 @@ fn setup_auto_convert_list_ui(
                 }
             );
 
-            let (this_ui, wc) =
-                setup_auto_convert_ui(&window.clone(), on_delete, on_updated.clone(), state);
+            let (this_ui, wc) = setup_auto_convert_ui(
+                &window.clone(),
+                on_delete,
+                on_updated.clone(),
+                output_dir_arc,
+                state,
+            );
             let mut cs = worklist_conversions1.lock().unwrap();
             cs.push(wc);
             frame.set_child(Some(&this_ui));
@@ -600,6 +640,7 @@ fn setup_auto_convert_ui<F, G>(
     window: &ApplicationWindow,
     on_delete: F,
     on_updated: G,
+    output_dir_arc: Arc<Mutex<Option<PathBuf>>>,
     saved_state: Option<&WorklistConversionState>,
 ) -> (Grid, Arc<Mutex<WorklistConversion>>)
 where
@@ -608,9 +649,9 @@ where
 {
     let (sender, receiver) = mpsc::channel();
     let worklist_conversion = if let Some(ss) = saved_state {
-        WorklistConversion::from_state(ss, sender)
+        WorklistConversion::from_state(ss, sender, output_dir_arc)
     } else {
-        Arc::new(Mutex::new(WorklistConversion::new(sender)))
+        Arc::new(Mutex::new(WorklistConversion::new(sender, output_dir_arc)))
     };
 
     let input_file_label = Label::builder()
@@ -624,16 +665,6 @@ where
         .label("Choose...")
         .build();
 
-    let output_file_label = Label::builder()
-        .halign(gtk::Align::End)
-        .label("Output Folder")
-        .build();
-    let output_entry = Entry::builder().hexpand(true).sensitive(false).build();
-    let output_button = Button::builder()
-        .width_request(100)
-        .hexpand(false)
-        .label("Choose...")
-        .build();
 
     let aetitle_label = Label::builder()
         .halign(gtk::Align::End)
@@ -649,9 +680,6 @@ where
     if let Some(ss) = saved_state {
         if let Some(s) = &ss.input_dir_path {
             input_entry.buffer().set_text(s.to_str().unwrap_or(""));
-        }
-        if let Some(s) = &ss.output_dir_path {
-            output_entry.buffer().set_text(s.to_str().unwrap_or(""));
         }
         if let Some(s) = &ss.aetitle {
             aetitle_entry.buffer().set_text(s);
@@ -692,17 +720,14 @@ where
     grid_layout.attach(&input_entry, 1, 0, 2, 1);
     grid_layout.attach(&input_button, 3, 0, 1, 1);
 
-    grid_layout.attach(&output_file_label, 0, 1, 1, 1);
-    grid_layout.attach(&output_entry, 1, 1, 2, 1);
-    grid_layout.attach(&output_button, 3, 1, 1, 1);
 
-    grid_layout.attach(&aetitle_label, 0, 2, 1, 1);
-    grid_layout.attach(&aetitle_entry, 1, 2, 3, 1);
-    grid_layout.attach(&modality_label, 0, 3, 1, 1);
-    grid_layout.attach(&modality_entry, 1, 3, 3, 1);
+    grid_layout.attach(&aetitle_label, 0, 1, 1, 1);
+    grid_layout.attach(&aetitle_entry, 1, 1, 3, 1);
+    grid_layout.attach(&modality_label, 0, 2, 1, 1);
+    grid_layout.attach(&modality_entry, 1, 2, 3, 1);
 
-    grid_layout.attach(&log_expander, 0, 4, 4, 1);
-    grid_layout.attach(&remove_button, 3, 5, 1, 1);
+    grid_layout.attach(&log_expander, 0, 3, 4, 1);
+    grid_layout.attach(&remove_button, 3, 4, 1, 1);
 
     let on_updated2 = on_updated.clone();
     input_button.connect_clicked(clone!(
@@ -753,46 +778,6 @@ where
                                                     .show(Some(&window));
                                             }
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                ),
-            );
-        }
-    ));
-
-    let on_updated2 = on_updated.clone();
-    output_button.connect_clicked(clone!(
-        #[weak]
-        window,
-        #[weak]
-        output_entry,
-        #[weak]
-        worklist_conversion,
-        move |_| {
-            let dialog = FileDialog::builder().build();
-            let on_updated2 = on_updated2.clone();
-            dialog.select_folder(
-                Some(&window),
-                None::<gtk::gio::Cancellable>.as_ref(),
-                clone!(
-                    #[weak]
-                    output_entry,
-                    move |result| match result {
-                        Err(err) => {
-                            println!("err {:?}", err);
-                        }
-                        Ok(file) => {
-                            if let Some(input_path) = file.path() {
-                                if let Some(p) = input_path.to_str() {
-                                    output_entry.buffer().set_text(p);
-                                    if let std::sync::LockResult::Ok(mut wc) =
-                                        worklist_conversion.lock()
-                                    {
-                                        wc.output_dir_path = Some(PathBuf::from(p));
-                                        on_updated2();
                                     }
                                 }
                             }
@@ -870,6 +855,7 @@ type WorklistConversionsState = Vec<WorklistConversionState>;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct StateFile {
+    output_path: Option<PathBuf>,
     conversions: WorklistConversionsState,
     // Option for backward compatibility
     dicom_server: Option<DicomServerState>,
@@ -878,6 +864,7 @@ struct StateFile {
 impl Default for StateFile {
     fn default() -> StateFile {
         StateFile {
+            output_path: None,
             conversions: Vec::new(),
             dicom_server: Some(DicomServerState::default()),
         }
@@ -886,16 +873,12 @@ impl Default for StateFile {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct DicomServerState {
-    path: Option<PathBuf>,
     port: Option<u16>,
 }
 
 impl Default for DicomServerState {
     fn default() -> DicomServerState {
-        DicomServerState {
-            path: None,
-            port: None,
-        }
+        DicomServerState { port: None }
     }
 }
 

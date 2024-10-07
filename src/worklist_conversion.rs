@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::fs::{create_dir, read_dir, rename};
 use std::io::{Error, ErrorKind};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
@@ -61,7 +62,7 @@ impl From<notify::Error> for WorklistError {
 
 pub struct WorklistConversion {
     input_watcher: Option<(PathBuf, Box<dyn Watcher + Send>)>,
-    pub output_dir_path: Option<PathBuf>,
+    output_dir_path: Arc<Mutex<Option<PathBuf>>>,
     aetitle: Option<String>,
     modality: Option<String>,
     log_sender: mpsc::Sender<String>,
@@ -70,16 +71,18 @@ pub struct WorklistConversion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorklistConversionState {
     pub input_dir_path: Option<PathBuf>,
-    pub output_dir_path: Option<PathBuf>,
     pub aetitle: Option<String>,
     pub modality: Option<String>,
 }
 
 impl WorklistConversion {
-    pub fn new(log_sender: mpsc::Sender<String>) -> WorklistConversion {
+    pub fn new(
+        log_sender: mpsc::Sender<String>,
+        output_dir_path: Arc<Mutex<Option<PathBuf>>>,
+    ) -> WorklistConversion {
         return WorklistConversion {
             input_watcher: None,
-            output_dir_path: None,
+            output_dir_path: output_dir_path,
             aetitle: None,
             modality: None,
             log_sender: log_sender,
@@ -89,7 +92,6 @@ impl WorklistConversion {
         let input_dir_path = self.input_watcher.as_ref().map(|(path, _)| path.clone());
         WorklistConversionState {
             input_dir_path: input_dir_path,
-            output_dir_path: self.output_dir_path.clone(),
             aetitle: self.aetitle.clone(),
             modality: self.modality.clone(),
         }
@@ -97,9 +99,9 @@ impl WorklistConversion {
     pub fn from_state(
         state: &WorklistConversionState,
         log_sender: mpsc::Sender<String>,
+        output_dir_path: Arc<Mutex<Option<PathBuf>>>,
     ) -> Arc<Mutex<WorklistConversion>> {
-        let mut wc = WorklistConversion::new(log_sender);
-        wc.output_dir_path = state.output_dir_path.clone();
+        let mut wc = WorklistConversion::new(log_sender, output_dir_path);
         wc.set_aetitle_string(state.aetitle.clone().unwrap_or("".to_string()));
         wc.set_modality_string(state.modality.clone().unwrap_or("".to_string()));
         let arc = Arc::new(Mutex::new(wc));
@@ -167,8 +169,9 @@ impl WorklistConversion {
     }
 
     pub fn scan_folder(&self) -> Result<(), WorklistError> {
+        let output_dir_path = self.output_dir_path.lock().unwrap();
         if let (Some((input_dir_path, _)), Some(output_dir_path)) =
-            (&self.input_watcher, &self.output_dir_path)
+            (&self.input_watcher, &output_dir_path.deref())
         {
             let processed_folder = {
                 let mut p = input_dir_path.clone();
