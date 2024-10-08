@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::From;
 use std::ffi::OsStr;
 use std::fmt;
-use std::fs::{create_dir, read_dir, rename};
+use std::fs::{create_dir, read_dir, rename, File};
 use std::io::{Error, ErrorKind};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -62,7 +62,7 @@ impl From<notify::Error> for WorklistError {
 
 pub struct WorklistConversion {
     input_watcher: Option<(PathBuf, Box<dyn Watcher + Send>)>,
-    output_dir_path: Arc<Mutex<Option<PathBuf>>>,
+    worklist_dir_path: Arc<Mutex<Option<PathBuf>>>,
     aetitle: Option<String>,
     modality: Option<String>,
     log_sender: mpsc::Sender<String>,
@@ -78,11 +78,11 @@ pub struct WorklistConversionState {
 impl WorklistConversion {
     pub fn new(
         log_sender: mpsc::Sender<String>,
-        output_dir_path: Arc<Mutex<Option<PathBuf>>>,
+        worklist_dir_path: Arc<Mutex<Option<PathBuf>>>,
     ) -> WorklistConversion {
         return WorklistConversion {
             input_watcher: None,
-            output_dir_path: output_dir_path,
+            worklist_dir_path: worklist_dir_path,
             aetitle: None,
             modality: None,
             log_sender: log_sender,
@@ -99,9 +99,9 @@ impl WorklistConversion {
     pub fn from_state(
         state: &WorklistConversionState,
         log_sender: mpsc::Sender<String>,
-        output_dir_path: Arc<Mutex<Option<PathBuf>>>,
+        worklist_dir_path: Arc<Mutex<Option<PathBuf>>>,
     ) -> Arc<Mutex<WorklistConversion>> {
-        let mut wc = WorklistConversion::new(log_sender, output_dir_path);
+        let mut wc = WorklistConversion::new(log_sender, worklist_dir_path);
         wc.set_aetitle_string(state.aetitle.clone().unwrap_or("".to_string()));
         wc.set_modality_string(state.modality.clone().unwrap_or("".to_string()));
         let arc = Arc::new(Mutex::new(wc));
@@ -169,55 +169,87 @@ impl WorklistConversion {
     }
 
     pub fn scan_folder(&self) -> Result<(), WorklistError> {
-        let output_dir_path = self.output_dir_path.lock().unwrap();
-        if let (Some((input_dir_path, _)), Some(output_dir_path)) =
-            (&self.input_watcher, &output_dir_path.deref())
-        {
-            let processed_folder = {
-                let mut p = input_dir_path.clone();
-                p.push("processed");
-                if !p.is_dir() {
+        let output_folder_path = self.output_folder()?;
+        let (input_dir_path, output_folder) = match (&self.input_watcher, output_folder_path) {
+            (Some((input_dir_path, _)), Some(output_dir_path)) => (input_dir_path, output_dir_path),
+            _ => {
+                return Ok(());
+            }
+        };
+        let processed_folder = {
+            let mut p = input_dir_path.clone();
+            p.push("processed");
+            if !p.is_dir() {
+                _ = self
+                    .log_sender
+                    .send(format!("Creating processed folder at: {}", &p.display()));
+                create_dir(&p)?;
+            }
+            p
+        };
+        let entries = read_dir(&input_dir_path)?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if path
+                    .extension()
+                    .map(|s| s.to_ascii_lowercase() == "gdt")
+                    .unwrap_or(false)
+                {
                     _ = self
                         .log_sender
-                        .send(format!("Creating processed folder at: {}", &p.display()));
-                    create_dir(&p)?;
-                }
-                p
-            };
-            let entries = read_dir(&input_dir_path)?;
-            for entry in entries {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_file() {
-                    if path
-                        .extension()
-                        .map(|s| s.to_ascii_lowercase() == "gdt")
-                        .unwrap_or(false)
-                    {
-                        _ = self
-                            .log_sender
-                            .send(format!("Processing GDT file: {}", &path.display()));
-                        let filename = convert_gdt_file(
-                            Some(&self.log_sender),
-                            &path.as_path(),
-                            &output_dir_path,
-                            &self.aetitle,
-                            &self.modality,
-                        )?;
+                        .send(format!("Processing GDT file: {}", &path.display()));
+                    let filename = convert_gdt_file(
+                        Some(&self.log_sender),
+                        &path.as_path(),
+                        &output_folder,
+                        &self.aetitle,
+                        &self.modality,
+                    )?;
 
-                        let mut processed_path = processed_folder.clone();
-                        processed_path.push(&filename);
-                        processed_path.set_extension("gdt");
-                        rename(&path, processed_path)?;
-                    } else {
-                        _ = self
-                            .log_sender
-                            .send(format!("Found non-GDT file, ignored: {}", path.display()));
-                    }
+                    let mut processed_path = processed_folder.clone();
+                    processed_path.push(&filename);
+                    processed_path.set_extension("gdt");
+                    rename(&path, processed_path)?;
+                } else {
+                    _ = self
+                        .log_sender
+                        .send(format!("Found non-GDT file, ignored: {}", path.display()));
                 }
             }
         }
         Ok(())
+    }
+
+    fn output_folder(&self) -> Result<Option<PathBuf>, WorklistError> {
+        let o_worklist_dir = self.worklist_dir_path.lock().unwrap();
+        let worklist_dir = match o_worklist_dir.deref() {
+            None => {
+                return Ok(None);
+            }
+            Some(a) => a,
+        };
+        let aetitle = match &self.aetitle {
+            None => {
+                return Ok(Some(worklist_dir.clone()));
+            }
+            Some(a) => a,
+        };
+        let mut result = worklist_dir.clone();
+        result.push(aetitle);
+        if !result.is_dir() {
+            _ = self
+                .log_sender
+                .send(format!("Creating AETitle folder at: {}", &result.display()));
+            create_dir(&result)?;
+        }
+        let mut lock_file = result.clone();
+        lock_file.push(".lockfile");
+        if !lock_file.is_file() {
+            _ = File::create(lock_file)?;
+        }
+        return Ok(Some(result));
     }
 }
 
