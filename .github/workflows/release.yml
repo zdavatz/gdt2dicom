@@ -112,11 +112,14 @@ jobs:
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmodify.exe ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmdump.exe ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dump2dcm.exe ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/wlmscpfs.exe ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmxml.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmdata.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/oflog.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/ofstd.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/bin/oficonv.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmnet.dll ./gui-out/bin/
+          cp ./dcmtk/dcmtk-*-win64-dynamic/bin/dcmwlm.dll ./gui-out/bin/
           cp ./dcmtk/dcmtk-*-win64-dynamic/share/dcmtk-*/dicom.dic ./gui-out/share/
 
           Compress-Archive -Path .\gui-out\* -Destination .\gdt2dicom-gui-win.zip
@@ -161,6 +164,7 @@ jobs:
           cp ./dcmtk/bin/dcmodify ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/bin/dcmdump ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/bin/dump2dcm ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
+          cp ./dcmtk/bin/wlmscpfs ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/bin/
           cp ./dcmtk/share/dcmtk-*/dicom.dic ./target/release/bundle/osx/gdt2dicom.app/Contents/Resources/share/
 
           # Pack GUI
