@@ -5,11 +5,10 @@ use std::fs::{read_dir, File};
 use std::io::{BufRead, Error as IoError};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
-use gdt2dicom::command::{binary_to_path, check_if_binary_exists};
+use gdt2dicom::command::{binary_to_path, check_if_binary_exists, new_command};
 use gdt2dicom::worklist_conversion::{WorklistConversion, WorklistConversionState};
 use gtk::gio::prelude::FileExt;
 use gtk::gio::{ActionEntry, Menu};
@@ -374,6 +373,11 @@ fn setup_dicom_server(
             }
         });
 
+    let notify_state_update1 = notify_state_update.clone();
+    port_entry.connect_changed(move |_| {
+        notify_state_update1();
+    });
+
     let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
         Arc::new(Mutex::new(None));
 
@@ -463,7 +467,7 @@ fn setup_dicom_server(
                 let (sender, receiver) = mpsc::channel::<ChildOutput>();
 
                 let full_path = binary_to_path("wlmscpfs".to_string());
-                let mut command = Command::new(full_path);
+                let mut command = new_command(full_path);
                 command
                     .args(vec![
                         "-v",

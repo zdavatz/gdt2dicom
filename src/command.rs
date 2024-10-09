@@ -80,6 +80,13 @@ where
     exec_command_with_env(command, arguments, print, log_sender, Vec::new())
 }
 
+pub fn new_command<S: AsRef<OsStr>>(program: S) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    return command;
+}
+
 pub fn exec_command_with_env<I, S>(
     command: &str,
     arguments: I,
