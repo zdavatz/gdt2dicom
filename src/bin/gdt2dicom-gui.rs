@@ -84,12 +84,13 @@ fn main() -> glib::ExitCode {
 
         let state_arc1 = state_arc.clone();
         let on_worklist_path_updated = move |new_path| {
-            let state = state_arc1.lock().unwrap();
+            let mut state = state_arc1.lock().unwrap();
             let new_state = StateFile {
                 worklist_path: new_path,
                 ..state.deref().clone()
             };
-            _ = write_state_to_file(new_state);
+            _ = write_state_to_file(&new_state);
+            *state = new_state;
         };
         let y = 0;
         let (y, worklist_dir_arc) = setup_worklist_folder_ui(
@@ -117,24 +118,26 @@ fn main() -> glib::ExitCode {
         let state_arc1 = state_arc.clone();
         runtime().spawn(async move {
             while let Ok(dicom_server_state) = dicom_server_state_receiver.recv() {
-                let state = state_arc1.lock().unwrap();
+                let mut state = state_arc1.lock().unwrap();
                 let new_state = StateFile {
                     dicom_server: Some(dicom_server_state),
                     ..state.deref().clone()
                 };
-                _ = write_state_to_file(new_state);
+                _ = write_state_to_file(&new_state);
+                *state = new_state;
             }
         });
 
         let state_arc1 = state_arc.clone();
         runtime().spawn(async move {
             while let Ok(convert_list_state) = convert_list_state_receiver.recv() {
-                let state = state_arc1.lock().unwrap();
+                let mut state = state_arc1.lock().unwrap();
                 let new_state = StateFile {
                     conversions: convert_list_state,
                     ..state.deref().clone()
                 };
-                _ = write_state_to_file(new_state);
+                _ = write_state_to_file(&new_state);
+                *state = new_state;
             }
         });
 
@@ -897,7 +900,7 @@ impl Default for DicomServerState {
     }
 }
 
-fn write_state_to_file(state: StateFile) -> Result<(), std::io::Error> {
+fn write_state_to_file(state: &StateFile) -> Result<(), std::io::Error> {
     let state_string = json!(state).to_string();
     let mut current_path = std::env::current_exe()?;
     current_path.set_file_name("state.json");
