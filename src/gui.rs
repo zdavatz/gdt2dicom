@@ -5,6 +5,7 @@ pub mod about_dialog;
 pub mod auto_convert;
 pub mod auto_convert_list;
 pub mod copyright_dialog;
+pub mod cstore_server;
 pub mod dicom_server;
 pub mod state;
 pub mod worklist_folder;

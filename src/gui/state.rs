@@ -14,6 +14,7 @@ pub struct StateFile {
     pub conversions: WorklistConversionsState,
     // Option for backward compatibility
     pub dicom_server: Option<DicomServerState>,
+    pub cstore_server: Option<CStoreServerState>,
 }
 
 impl Default for StateFile {
@@ -22,6 +23,7 @@ impl Default for StateFile {
             worklist_path: None,
             conversions: Vec::new(),
             dicom_server: Some(DicomServerState::default()),
+            cstore_server: Some(CStoreServerState::default()),
         }
     }
 }
@@ -34,6 +36,23 @@ pub struct DicomServerState {
 impl Default for DicomServerState {
     fn default() -> DicomServerState {
         DicomServerState { port: None }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CStoreServerState {
+    pub path: Option<PathBuf>,
+    pub port: Option<u16>,
+    pub jpeg_output_path: Option<PathBuf>,
+}
+
+impl Default for CStoreServerState {
+    fn default() -> CStoreServerState {
+        CStoreServerState {
+            path: None,
+            port: None,
+            jpeg_output_path: None,
+        }
     }
 }
 

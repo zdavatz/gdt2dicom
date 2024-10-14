@@ -34,7 +34,10 @@ pub fn setup_dicom_server(
         .build();
     let port_entry = Entry::builder().hexpand(true).build();
     let run_button = Button::builder().label("Run").build();
-    let status_label = Label::new(Some("Stopped"));
+    let status_label = Label::builder()
+        .label("Stopped")
+        .halign(gtk::Align::Start)
+        .build();
 
     let log_text_view = TextView::builder().build();
     let log_scroll_window = ScrolledWindow::builder()

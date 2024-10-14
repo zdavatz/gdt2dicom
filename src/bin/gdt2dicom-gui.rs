@@ -1,5 +1,3 @@
-#![windows_subsystem = "windows"]
-
 use std::default::Default;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -14,9 +12,12 @@ use gtk::{glib, AlertDialog, Application, ApplicationWindow, Grid, Separator};
 use gdt2dicom::gui::about_dialog::open_about_dialog;
 use gdt2dicom::gui::auto_convert_list::setup_auto_convert_list_ui;
 use gdt2dicom::gui::copyright_dialog::open_copyright_dialog;
+use gdt2dicom::gui::cstore_server::setup_cstore_server;
 use gdt2dicom::gui::dicom_server::setup_dicom_server;
 use gdt2dicom::gui::runtime;
-use gdt2dicom::gui::state::{read_saved_states, write_state_to_file, DicomServerState, StateFile};
+use gdt2dicom::gui::state::{
+    read_saved_states, write_state_to_file, CStoreServerState, DicomServerState, StateFile,
+};
 use gdt2dicom::gui::worklist_folder::setup_worklist_folder_ui;
 
 fn main() -> glib::ExitCode {
@@ -71,11 +72,16 @@ fn main() -> glib::ExitCode {
             StateFile::default()
         });
 
-        // TODO: make dicom_server non-optional when user upgraded from old save data
+        // TODO: make dicom_server and cstore_server non-optional when user upgraded from old save data
         let dicom_server_state = &saved_state
             .dicom_server
             .clone()
             .unwrap_or(DicomServerState::default());
+
+        let cstore_server_state = &saved_state
+            .cstore_server
+            .clone()
+            .unwrap_or(CStoreServerState::default());
 
         let state_arc = Arc::new(Mutex::new(saved_state.clone()));
 
@@ -104,12 +110,18 @@ fn main() -> glib::ExitCode {
             y,
             worklist_dir_arc.clone(),
         );
-        let (_y, convert_list_state_receiver) = setup_auto_convert_list_ui(
+        let (y, convert_list_state_receiver) = setup_auto_convert_list_ui(
             &saved_state.conversions,
             &window.clone(),
             &grid_layout.clone(),
             y,
             worklist_dir_arc.clone(),
+        );
+        let (_y, _cstore_state_receiver) = setup_cstore_server(
+            &cstore_server_state,
+            &window.clone(),
+            &grid_layout.clone(),
+            y,
         );
 
         let state_arc1 = state_arc.clone();
