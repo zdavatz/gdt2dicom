@@ -17,7 +17,7 @@ use crate::gui::runtime;
 use crate::gui::state::CStoreServerState;
 
 pub fn setup_cstore_server(
-    _initial_state: &CStoreServerState,
+    initial_state: &CStoreServerState,
     window: &ApplicationWindow,
     parent_grid: &Grid,
     grid_y_index: i32,
@@ -102,6 +102,48 @@ pub fn setup_cstore_server(
 
     parent_grid.attach(&frame, 0, grid_y_index, 4, 1);
 
+    if let Some(p) = &initial_state.path {
+        dir_entry.buffer().set_text(p.display().to_string());
+    }
+    if let Some(p) = &initial_state.port {
+        port_entry.buffer().set_text(p.to_string());
+    }
+    if let Some(p) = &initial_state.jpeg_output_path {
+        jpeg_dir_entry.buffer().set_text(p.display().to_string());
+    }
+
+    let notify_state_update = clone!(
+        #[weak]
+        dir_entry,
+        #[weak]
+        port_entry,
+        #[weak]
+        jpeg_dir_entry,
+        move || {
+            let dir = dir_entry.buffer().text().as_str().to_string();
+            let dir_path = if dir.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(dir))
+            };
+            let port_str = port_entry.buffer().text();
+            let port_int = u16::from_str(port_str.as_str());
+            let jpeg_dir = jpeg_dir_entry.buffer().text().as_str().to_string();
+            let jpeg_dir_path = if jpeg_dir.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(jpeg_dir))
+            };
+            let state = CStoreServerState {
+                path: dir_path,
+                port: port_int.ok(),
+                jpeg_output_path: jpeg_dir_path,
+            };
+            _ = state_sender.send(state);
+        }
+    );
+
+    let notify_state_update1 = notify_state_update.clone();
     dir_button.connect_clicked(clone!(
         #[weak]
         window,
@@ -109,6 +151,7 @@ pub fn setup_cstore_server(
         dir_entry,
         move |_| {
             let dialog = FileDialog::builder().build();
+            let notify_state_update1 = notify_state_update1.clone();
             dialog.select_folder(
                 Some(&window),
                 None::<gtk::gio::Cancellable>.as_ref(),
@@ -123,6 +166,7 @@ pub fn setup_cstore_server(
                             if let Some(input_path) = file.path() {
                                 if let Some(p) = input_path.to_str() {
                                     dir_entry.buffer().set_text(p);
+                                    notify_state_update1();
                                 }
                             }
                         }
@@ -132,6 +176,23 @@ pub fn setup_cstore_server(
         }
     ));
 
+    port_entry
+        .delegate()
+        .unwrap()
+        .connect_insert_text(move |entry, text, position| {
+            let pattern = |c: char| -> bool { !c.is_ascii_digit() };
+            if text.contains(pattern) || text.len() > 5 {
+                glib::signal::signal_stop_emission_by_name(entry, "insert-text");
+                entry.insert_text(&text.replace(pattern, ""), position);
+            }
+        });
+
+    let notify_state_update1 = notify_state_update.clone();
+    port_entry.connect_changed(move |_| {
+        notify_state_update1();
+    });
+
+    let notify_state_update1 = notify_state_update.clone();
     jpeg_dir_button.connect_clicked(clone!(
         #[weak]
         window,
@@ -139,6 +200,7 @@ pub fn setup_cstore_server(
         jpeg_dir_entry,
         move |_| {
             let dialog = FileDialog::builder().build();
+            let notify_state_update1 = notify_state_update1.clone();
             dialog.select_folder(
                 Some(&window),
                 None::<gtk::gio::Cancellable>.as_ref(),
@@ -153,6 +215,7 @@ pub fn setup_cstore_server(
                             if let Some(input_path) = file.path() {
                                 if let Some(p) = input_path.to_str() {
                                     jpeg_dir_entry.buffer().set_text(p);
+                                    notify_state_update1();
                                 }
                             }
                         }

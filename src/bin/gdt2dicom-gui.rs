@@ -117,7 +117,7 @@ fn main() -> glib::ExitCode {
             y,
             worklist_dir_arc.clone(),
         );
-        let (_y, _cstore_state_receiver) = setup_cstore_server(
+        let (_y, cstore_server_state_receiver) = setup_cstore_server(
             &cstore_server_state,
             &window.clone(),
             &grid_layout.clone(),
@@ -143,6 +143,19 @@ fn main() -> glib::ExitCode {
                 let mut state = state_arc1.lock().unwrap();
                 let new_state = StateFile {
                     conversions: convert_list_state,
+                    ..state.deref().clone()
+                };
+                _ = write_state_to_file(&new_state);
+                *state = new_state;
+            }
+        });
+
+        let state_arc1 = state_arc.clone();
+        runtime().spawn(async move {
+            while let Ok(cstore_server_state) = cstore_server_state_receiver.recv() {
+                let mut state = state_arc1.lock().unwrap();
+                let new_state = StateFile {
+                    cstore_server: Some(cstore_server_state),
                     ..state.deref().clone()
                 };
                 _ = write_state_to_file(&new_state);
