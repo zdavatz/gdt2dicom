@@ -1,18 +1,23 @@
-use std::sync::{Arc, Mutex};
+use std::io::BufRead;
+use std::ops::DerefMut;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::{mpsc, Arc, Mutex};
 
 use gtk::gio::prelude::FileExt;
-use gtk::glib::clone;
+use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
 use gtk::{
-    glib, ApplicationWindow, Button, Entry, Expander, FileDialog, Frame, Grid, Label,
+    glib, AlertDialog, ApplicationWindow, Button, Entry, Expander, FileDialog, Frame, Grid, Label,
     ScrolledWindow, TextView,
 };
 
+use crate::command::{binary_to_path, new_command, ChildOutput};
+use crate::gui::runtime;
 use crate::gui::state::CStoreServerState;
-use std::sync::mpsc;
 
 pub fn setup_cstore_server(
-    initial_state: &CStoreServerState,
+    _initial_state: &CStoreServerState,
     window: &ApplicationWindow,
     parent_grid: &Grid,
     grid_y_index: i32,
@@ -52,7 +57,6 @@ pub fn setup_cstore_server(
         .build();
 
     let run_button = Button::builder().label("Run").build();
-    // let status_label = Label::new(Some("Stopped"));
     let status_label = Label::builder()
         .label("Stopped")
         .halign(gtk::Align::Start)
@@ -97,5 +101,252 @@ pub fn setup_cstore_server(
     grid_layout.attach(&log_expander, 0, 4, 4, 1);
 
     parent_grid.attach(&frame, 0, grid_y_index, 4, 1);
+
+    dir_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        dir_entry,
+        move |_| {
+            let dialog = FileDialog::builder().build();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                clone!(
+                    #[weak]
+                    dir_entry,
+                    move |result| match result {
+                        Err(err) => {
+                            println!("err {:?}", err);
+                        }
+                        Ok(file) => {
+                            if let Some(input_path) = file.path() {
+                                if let Some(p) = input_path.to_str() {
+                                    dir_entry.buffer().set_text(p);
+                                }
+                            }
+                        }
+                    },
+                ),
+            );
+        }
+    ));
+
+    jpeg_dir_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        jpeg_dir_entry,
+        move |_| {
+            let dialog = FileDialog::builder().build();
+            dialog.select_folder(
+                Some(&window),
+                None::<gtk::gio::Cancellable>.as_ref(),
+                clone!(
+                    #[weak]
+                    jpeg_dir_entry,
+                    move |result| match result {
+                        Err(err) => {
+                            println!("err {:?}", err);
+                        }
+                        Ok(file) => {
+                            if let Some(input_path) = file.path() {
+                                if let Some(p) = input_path.to_str() {
+                                    jpeg_dir_entry.buffer().set_text(p);
+                                }
+                            }
+                        }
+                    },
+                ),
+            );
+        }
+    ));
+
+    let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
+        Arc::new(Mutex::new(None));
+
+    let update_run_status = clone!(
+        #[weak]
+        run_button,
+        #[weak]
+        status_label,
+        #[weak]
+        port_entry,
+        #[weak]
+        running_child,
+        move || {
+            spawn_future_local(clone!(
+                #[weak]
+                run_button,
+                #[weak]
+                status_label,
+                #[weak]
+                port_entry,
+                #[weak]
+                running_child,
+                async move {
+                    let rc = running_child.lock().unwrap();
+                    if rc.is_some() {
+                        run_button.set_label("Stop");
+                        status_label.set_label("Running");
+                        port_entry.set_sensitive(false);
+                    } else {
+                        run_button.set_label("Run");
+                        status_label.set_label("Stopped");
+                        port_entry.set_sensitive(true);
+                    }
+                }
+            ));
+        }
+    );
+
+    run_button.connect_clicked(clone!(
+        #[weak]
+        window,
+        #[weak]
+        dir_entry,
+        #[weak]
+        jpeg_dir_entry,
+        #[weak]
+        port_entry,
+        move |_| {
+            let mut rc = running_child.lock().unwrap();
+            if let Some(ref mut child) = rc.deref_mut() {
+                _ = child.kill();
+                *rc = None;
+                let buffer = log_text_view.buffer();
+                buffer.insert(&mut buffer.end_iter(), "Killed process");
+                buffer.insert(&mut buffer.end_iter(), "\n");
+            } else {
+                let dir = dir_entry.buffer().text().as_str().to_string();
+                if dir.is_empty() {
+                    AlertDialog::builder()
+                        .message("Please select a directory first")
+                        .modal(true)
+                        .build()
+                        .show(Some(&window));
+                    return;
+                }
+                let dir_path = PathBuf::from(dir);
+                let jpeg_dir = jpeg_dir_entry.buffer().text().as_str().to_string();
+                let jpeg_dir_path = if jpeg_dir.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(jpeg_dir))
+                };
+                let port_str = port_entry.buffer().text();
+                let port_int = match u16::from_str(port_str.as_str()) {
+                    Err(_) => {
+                        AlertDialog::builder()
+                            .message("Please enter a valid port")
+                            .modal(true)
+                            .build()
+                            .show(Some(&window));
+                        return;
+                    }
+                    Ok(a) => a,
+                };
+
+                // storescp -d +v -pm +xy 25700
+                let full_path = binary_to_path("storescp".to_string());
+                let mut command = new_command(full_path);
+                command
+                    .args(vec![
+                        "-d",
+                        "+v",
+                        "-pm",
+                        "+xy",
+                        "-od",
+                        dir_path.to_str().unwrap(),
+                        &format!("{}", port_int),
+                    ])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+
+                let (sender, receiver) = mpsc::channel::<ChildOutput>();
+                _ = sender.send(ChildOutput::Log(format!("Running command: {:?}", command)));
+
+                let child = match shared_child::SharedChild::spawn(&mut command) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        AlertDialog::builder()
+                            .message("Error")
+                            .detail(err.to_string())
+                            .modal(true)
+                            .build()
+                            .show(Some(&window));
+                        return;
+                    }
+                };
+                let stdout = child.take_stdout().expect("stdout");
+                let stderr = child.take_stderr().expect("stderr");
+
+                let err_reader = std::io::BufReader::new(stderr);
+                let err_sender = sender.clone();
+                runtime().spawn(async move {
+                    for line in err_reader.lines() {
+                        if let Ok(msg) = line {
+                            _ = err_sender.send(ChildOutput::Log(msg));
+                        }
+                    }
+                });
+
+                let out_reader = std::io::BufReader::new(stdout);
+                let out_sender = sender.clone();
+                runtime().spawn(async move {
+                    for line in out_reader.lines() {
+                        if let Ok(msg) = line {
+                            _ = out_sender.send(ChildOutput::Log(msg));
+                        }
+                    }
+                });
+
+                let (asender, arecv) = async_channel::unbounded::<ChildOutput>();
+                runtime().spawn(async move {
+                    while let Ok(msg) = receiver.recv() {
+                        _ = asender.send(msg).await;
+                    }
+                });
+
+                let update_run_status1 = update_run_status.clone();
+                spawn_future_local(clone!(
+                    #[weak]
+                    running_child,
+                    #[weak]
+                    log_text_view,
+                    async move {
+                        while let Ok(msg) = arecv.recv().await {
+                            let buffer = log_text_view.buffer();
+                            match msg {
+                                ChildOutput::Log(msg) => {
+                                    buffer.insert(&mut buffer.end_iter(), &msg);
+                                }
+                                ChildOutput::Exit(_exit_status) => {
+                                    let mut rc = running_child.lock().unwrap();
+                                    *rc = None;
+                                    print!("ChildOutput::Exit");
+                                    update_run_status1();
+                                }
+                            }
+                            buffer.insert(&mut buffer.end_iter(), "\n");
+                        }
+                    }
+                ));
+
+                let arc_child = Arc::new(child);
+
+                let child1 = arc_child.clone();
+                let exit_sender = sender.clone();
+                runtime().spawn(async move {
+                    let exit_result = child1.wait().expect("wait");
+                    _ = exit_sender.send(ChildOutput::Log(format!("Exited {:?}", exit_result)));
+                    _ = exit_sender.send(ChildOutput::Exit(exit_result));
+                });
+                *rc = Some(arc_child);
+                update_run_status();
+            }
+        }
+    ));
+
     return (grid_y_index + 1, state_receiver);
 }

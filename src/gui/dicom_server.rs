@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex};
 
-use crate::command::{binary_to_path, new_command};
+use crate::command::{binary_to_path, new_command, ChildOutput};
 use crate::gui::runtime;
 use crate::gui::state::DicomServerState;
 use gtk::glib::{clone, spawn_future_local};
@@ -184,11 +184,6 @@ pub fn setup_dicom_server(
                 buffer.insert(&mut buffer.end_iter(), "Killed process");
                 buffer.insert(&mut buffer.end_iter(), "\n");
             } else {
-                #[derive(Debug)]
-                enum ChildOutput {
-                    Log(String),
-                    Exit(std::process::ExitStatus),
-                }
                 let (sender, receiver) = mpsc::channel::<ChildOutput>();
 
                 let full_path = binary_to_path("wlmscpfs".to_string());
