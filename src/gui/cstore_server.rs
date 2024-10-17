@@ -237,6 +237,10 @@ pub fn setup_cstore_server(
         port_entry,
         #[weak]
         running_child,
+        #[weak]
+        jpeg_dir_button,
+        #[weak]
+        dir_button,
         move || {
             spawn_future_local(clone!(
                 #[weak]
@@ -247,16 +251,24 @@ pub fn setup_cstore_server(
                 port_entry,
                 #[weak]
                 running_child,
+                #[weak]
+                jpeg_dir_button,
+                #[weak]
+                dir_button,
                 async move {
                     let rc = running_child.lock().unwrap();
                     if rc.is_some() {
                         run_button.set_label("Stop");
                         status_label.set_label("Running");
                         port_entry.set_sensitive(false);
+                        dir_button.set_sensitive(false);
+                        jpeg_dir_button.set_sensitive(false);
                     } else {
                         run_button.set_label("Run");
                         status_label.set_label("Stopped");
                         port_entry.set_sensitive(true);
+                        dir_button.set_sensitive(true);
+                        jpeg_dir_button.set_sensitive(true);
                     }
                 }
             ));
