@@ -1,9 +1,7 @@
 use chrono::prelude::*;
 use notify::{recommended_watcher, Event, EventHandler, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::convert::From;
 use std::ffi::OsStr;
-use std::fmt;
 use std::fs::{create_dir, read_dir, rename, File};
 use std::io::{Error, ErrorKind};
 use std::ops::Deref;
@@ -14,51 +12,9 @@ use tempfile::NamedTempFile;
 
 use crate::command::{exec_command, exec_command_with_env};
 use crate::dcm_worklist::{dcm_to_worklist, dcm_xml_to_worklist};
-use crate::dcm_xml::{default_dcm_xml, file_to_xml, DcmError, DcmTransferType};
-use crate::gdt::{parse_file, GdtError};
-
-#[derive(Debug)]
-pub enum WorklistError {
-    IoError(std::io::Error),
-    DcmError(DcmError),
-    GdtError(GdtError),
-    NotifyError(notify::Error),
-}
-
-impl fmt::Display for WorklistError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WorklistError::IoError(e) => write!(f, "IO: {}", e),
-            WorklistError::DcmError(e) => write!(f, "DCM: {}", e),
-            WorklistError::GdtError(e) => write!(f, "GdtError: {}", e),
-            WorklistError::NotifyError(e) => write!(f, "NotifyError: {}", e),
-        }
-    }
-}
-
-impl From<std::io::Error> for WorklistError {
-    fn from(error: std::io::Error) -> Self {
-        WorklistError::IoError(error)
-    }
-}
-
-impl From<DcmError> for WorklistError {
-    fn from(error: DcmError) -> Self {
-        WorklistError::DcmError(error)
-    }
-}
-
-impl From<GdtError> for WorklistError {
-    fn from(error: GdtError) -> Self {
-        WorklistError::GdtError(error)
-    }
-}
-
-impl From<notify::Error> for WorklistError {
-    fn from(error: notify::Error) -> Self {
-        WorklistError::NotifyError(error)
-    }
-}
+use crate::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
+use crate::error::G2DError;
+use crate::gdt::parse_file;
 
 pub struct WorklistConversion {
     input_watcher: Option<(PathBuf, Box<dyn Watcher + Send>)>,
@@ -120,7 +76,7 @@ impl WorklistConversion {
         &mut self,
         path: Option<PathBuf>,
         self_arc: Arc<Mutex<WorklistConversion>>,
-    ) -> Result<(), WorklistError> {
+    ) -> Result<(), G2DError> {
         if self.input_dir_path() == path {
             return Ok(());
         }
@@ -168,7 +124,7 @@ impl WorklistConversion {
         }
     }
 
-    pub fn scan_folder(&self) -> Result<(), WorklistError> {
+    pub fn scan_folder(&self) -> Result<(), G2DError> {
         let output_folder_path = self.output_folder()?;
         let (input_dir_path, output_folder) = match (&self.input_watcher, output_folder_path) {
             (Some((input_dir_path, _)), Some(output_dir_path)) => (input_dir_path, output_dir_path),
@@ -222,7 +178,7 @@ impl WorklistConversion {
         Ok(())
     }
 
-    fn output_folder(&self) -> Result<Option<PathBuf>, WorklistError> {
+    fn output_folder(&self) -> Result<Option<PathBuf>, G2DError> {
         let o_worklist_dir = self.worklist_dir_path.lock().unwrap();
         let worklist_dir = match o_worklist_dir.deref() {
             None => {
@@ -299,7 +255,7 @@ fn convert_gdt_file(
     output_dir: &PathBuf,
     aetitle: &Option<String>,
     modality: &Option<String>,
-) -> Result<String, WorklistError> {
+) -> Result<String, G2DError> {
     let gdt_file = parse_file(input_path)?;
     let local: DateTime<Local> = Local::now();
     let timestamp = local.format("%d.%m.%Y_%H.%M.%S").to_string();
@@ -353,7 +309,7 @@ fn modify_dcm_file(
     aetitle: &Option<String>,
     modality: &Option<String>,
     xml_file_path: &Path,
-) -> Result<NamedTempFile, WorklistError> {
+) -> Result<NamedTempFile, G2DError> {
     // This function is same as this bash:
     // $ xml2dcm [xml_file_path] [temp1]
     // $ dcmodify -i "0032,1060=MODALITY"
@@ -372,7 +328,7 @@ fn modify_dcm_file(
             _ = log_sender.send(err_str.to_string());
         }
         let custom_error = Error::new(ErrorKind::Other, err_str);
-        return Err(WorklistError::IoError(custom_error));
+        return Err(G2DError::IoError(custom_error));
     }
 
     let envs = if cfg!(not(target_os = "linux")) {
@@ -399,7 +355,7 @@ fn modify_dcm_file(
                 _ = log_sender.send(err_str.to_string());
             }
             let custom_error = Error::new(ErrorKind::Other, err_str);
-            return Err(WorklistError::IoError(custom_error));
+            return Err(G2DError::IoError(custom_error));
         }
     }
 
@@ -421,7 +377,7 @@ fn modify_dcm_file(
                 _ = log_sender.send(err_str.to_string());
             }
             let custom_error = Error::new(ErrorKind::Other, err_str);
-            return Err(WorklistError::IoError(custom_error));
+            return Err(G2DError::IoError(custom_error));
         }
     }
 

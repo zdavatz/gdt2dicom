@@ -1,6 +1,4 @@
-use std::convert::From;
 use std::ffi::OsStr;
-use std::fmt;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,44 +15,10 @@ use xml::reader::XmlEvent;
 use xml::writer::EventWriter;
 
 use crate::command::exec_command;
+use crate::error::G2DError;
 use crate::gdt::{GdtBasicDiagnosticsObject, GdtFile, GdtPatientGender, GdtPatientObject};
 
-#[derive(Debug)]
-pub enum DcmError {
-    IoError(std::io::Error),
-    XmlReaderError(xml::reader::Error),
-    XmlWriterError(xml::writer::Error),
-}
-
-impl From<std::io::Error> for DcmError {
-    fn from(error: std::io::Error) -> Self {
-        DcmError::IoError(error)
-    }
-}
-
-impl From<xml::reader::Error> for DcmError {
-    fn from(error: xml::reader::Error) -> Self {
-        DcmError::XmlReaderError(error)
-    }
-}
-
-impl From<xml::writer::Error> for DcmError {
-    fn from(error: xml::writer::Error) -> Self {
-        DcmError::XmlWriterError(error)
-    }
-}
-
-impl fmt::Display for DcmError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DcmError::IoError(e) => write!(f, "IO: {}", e),
-            DcmError::XmlReaderError(e) => write!(f, "XmlReaderError: {}", e),
-            DcmError::XmlWriterError(e) => write!(f, "XmlWriterError: {}", e),
-        }
-    }
-}
-
-pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
+pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, G2DError> {
     let file = File::open(path)?;
     let reader = EventReader::new(file);
     let mut events: Vec<XmlEvent> = reader
@@ -64,7 +28,7 @@ pub fn parse_dcm_xml(path: &Path) -> Result<Vec<XmlEvent>, DcmError> {
     return Ok(events);
 }
 
-pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
+pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, G2DError> {
     let output = Command::new("dcm2xml").arg(path).output()?;
     std::io::stderr().write_all(&output.stderr).unwrap();
     let reader = EventReader::new(output.stdout.as_slice());
@@ -74,7 +38,7 @@ pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, DcmError> {
     return Ok(events);
 }
 
-pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), DcmError> {
+pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), G2DError> {
     exec_command(
         "dcmj2pnm",
         vec![
@@ -89,7 +53,7 @@ pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Resu
     return Ok(());
 }
 
-pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
+pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, G2DError> {
     let temp_file = NamedTempFile::new()?;
     let mut writer = EventWriter::new(&temp_file);
     for e in events {
@@ -360,7 +324,7 @@ pub fn default_dcm_worklist_xml_str() -> String {
     return xml;
 }
 
-pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) -> Result<NamedTempFile, DcmError> {
+pub fn file_to_xml(file: GdtFile, xml_events: &Vec<XmlEvent>) -> Result<NamedTempFile, G2DError> {
     let mut cloned = xml_events.clone();
     add_element_if_not_exist(
         &mut cloned,
