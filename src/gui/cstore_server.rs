@@ -13,6 +13,7 @@ use gtk::{
 };
 
 use crate::command::{binary_to_path, new_command, ChildOutput};
+use crate::dicom_jpeg_extraction::DicomJpegExtraction;
 use crate::gui::runtime;
 use crate::gui::state::CStoreServerState;
 
@@ -227,6 +228,7 @@ pub fn setup_cstore_server(
 
     let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
         Arc::new(Mutex::new(None));
+    let jpeg_extraction: Arc<Mutex<Option<DicomJpegExtraction>>> = Arc::new(Mutex::new(None));
 
     let update_run_status = clone!(
         #[weak]
@@ -292,6 +294,11 @@ pub fn setup_cstore_server(
                 let buffer = log_text_view.buffer();
                 buffer.insert(&mut buffer.end_iter(), "Killed process");
                 buffer.insert(&mut buffer.end_iter(), "\n");
+                let mut ex = jpeg_extraction.lock().unwrap();
+                if let Some(ref mut jpeg_child) = ex.deref_mut() {
+                    jpeg_child.stop();
+                }
+                *ex = None;
             } else {
                 let dir = dir_entry.buffer().text().as_str().to_string();
                 if dir.is_empty() {
@@ -322,13 +329,11 @@ pub fn setup_cstore_server(
                     Ok(a) => a,
                 };
 
-                // storescp -d +v -pm +xy 25700
                 let full_path = binary_to_path("storescp".to_string());
                 let mut command = new_command(full_path);
                 command
                     .args(vec![
-                        "-d",
-                        "+v",
+                        "-v",
                         "-pm",
                         "+xy",
                         "-od",
@@ -419,6 +424,13 @@ pub fn setup_cstore_server(
                 });
                 *rc = Some(arc_child);
                 update_run_status();
+
+                if let Some(j) = jpeg_dir_path {
+                    let mut ex = jpeg_extraction.lock().unwrap();
+                    let mut x = DicomJpegExtraction::new(dir_path, j, sender.clone()).unwrap();
+                    x.start();
+                    *ex = Some(x);
+                }
             }
         }
     ));
