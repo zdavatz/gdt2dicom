@@ -13,7 +13,7 @@ use gtk::{
 };
 
 use crate::command::{binary_to_path, new_command, ChildOutput};
-use crate::dicom_jpeg_extraction::DicomJpegExtraction;
+use crate::dicom_jpeg_extraction::extract_jpeg_from_dicom;
 use crate::gui::runtime;
 use crate::gui::state::CStoreServerState;
 
@@ -228,7 +228,6 @@ pub fn setup_cstore_server(
 
     let running_child: Arc<Mutex<Option<Arc<shared_child::SharedChild>>>> =
         Arc::new(Mutex::new(None));
-    let jpeg_extraction: Arc<Mutex<Option<DicomJpegExtraction>>> = Arc::new(Mutex::new(None));
 
     let update_run_status = clone!(
         #[weak]
@@ -294,11 +293,6 @@ pub fn setup_cstore_server(
                 let buffer = log_text_view.buffer();
                 buffer.insert(&mut buffer.end_iter(), "Killed process");
                 buffer.insert(&mut buffer.end_iter(), "\n");
-                let mut ex = jpeg_extraction.lock().unwrap();
-                if let Some(ref mut jpeg_child) = ex.deref_mut() {
-                    jpeg_child.stop();
-                }
-                *ex = None;
             } else {
                 let dir = dir_entry.buffer().text().as_str().to_string();
                 if dir.is_empty() {
@@ -366,7 +360,28 @@ pub fn setup_cstore_server(
                 runtime().spawn(async move {
                     for line in err_reader.lines() {
                         if let Ok(msg) = line {
-                            _ = err_sender.send(ChildOutput::Log(msg));
+                            if let Some(saved_dicom_file) =
+                                msg.strip_prefix("I: storing DICOM file: ")
+                            {
+                                _ = err_sender.send(ChildOutput::Log(format!(
+                                    "Detected new DICOM file: {:?}",
+                                    &saved_dicom_file
+                                )));
+                                if let Some(ref j) = jpeg_dir_path {
+                                    let extract_result = extract_jpeg_from_dicom(
+                                        &PathBuf::from(saved_dicom_file),
+                                        j,
+                                        &err_sender,
+                                    );
+                                    if let Err(err) = extract_result {
+                                        _ = err_sender.send(ChildOutput::Log(format!(
+                                            "Cannot extract jpeg from {}: {:?}",
+                                            &saved_dicom_file, err
+                                        )));
+                                    }
+                                }
+                            }
+                            _ = err_sender.send(ChildOutput::Log(format!("storescp: {}", msg)));
                         }
                     }
                 });
@@ -376,7 +391,7 @@ pub fn setup_cstore_server(
                 runtime().spawn(async move {
                     for line in out_reader.lines() {
                         if let Ok(msg) = line {
-                            _ = out_sender.send(ChildOutput::Log(msg));
+                            _ = out_sender.send(ChildOutput::Log(format!("storescp: {}", msg)));
                         }
                     }
                 });
@@ -404,7 +419,6 @@ pub fn setup_cstore_server(
                                 ChildOutput::Exit(_exit_status) => {
                                     let mut rc = running_child.lock().unwrap();
                                     *rc = None;
-                                    print!("ChildOutput::Exit");
                                     update_run_status1();
                                 }
                             }
@@ -419,18 +433,14 @@ pub fn setup_cstore_server(
                 let exit_sender = sender.clone();
                 runtime().spawn(async move {
                     let exit_result = child1.wait().expect("wait");
-                    _ = exit_sender.send(ChildOutput::Log(format!("Exited {:?}", exit_result)));
+                    _ = exit_sender.send(ChildOutput::Log(format!(
+                        "storescp Exited {:?}",
+                        exit_result
+                    )));
                     _ = exit_sender.send(ChildOutput::Exit(exit_result));
                 });
                 *rc = Some(arc_child);
                 update_run_status();
-
-                if let Some(j) = jpeg_dir_path {
-                    let mut ex = jpeg_extraction.lock().unwrap();
-                    let mut x = DicomJpegExtraction::new(dir_path, j, sender.clone()).unwrap();
-                    x.start();
-                    *ex = Some(x);
-                }
             }
         }
     ));
