@@ -25,7 +25,7 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
-          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui --features=gui
           tar -czvf gdt2dicom-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
           tar -czvf dicom2gdt-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
           tar -czvf gdt2opp-linux.tar.gz ./target/x86_64-unknown-linux-gnu/release/gdt2opp
@@ -58,7 +58,8 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk/lib/pkgconfig"
-          cargo build --release
+          cargo build --verbose --release --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+          cargo build --verbose --release --bin gdt2dicom-gui --features=gui
 
       - name: Copy GUI dependencies
         run: |
@@ -149,7 +150,7 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           cargo build --release
-          cargo bundle --release --bin gdt2dicom-gui
+          cargo bundle --release --bin gdt2dicom-gui --features=gui
           node bin/patch-dependencies.js ./target/release/bundle/osx/gdt2dicom.app/Contents/MacOS/gdt2dicom-gui
 
           # Bundle dcmtk binaries to GUI

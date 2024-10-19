@@ -25,11 +25,14 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
-          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui
+          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom-gui --features=gui
       - name: Check format
         run: |
           cd ${{ github.workspace }}
           cargo fmt --check
+      - name: Setup interactive ssh session
+        if: ${{ failure() }}
+        uses: Warpbuilds/action-debugger@v1.3
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -57,7 +60,8 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk/lib/pkgconfig"
-          cargo build --verbose --release
+          cargo build --verbose --release --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+          cargo build --verbose --release --bin gdt2dicom-gui --features=gui
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -154,7 +158,7 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           cargo build --release
-          cargo bundle --release --bin gdt2dicom-gui
+          cargo bundle --release --bin gdt2dicom-gui --features=gui
           node bin/patch-dependencies.js ./target/release/bundle/osx/gdt2dicom.app/Contents/MacOS/gdt2dicom-gui
 
           # Bundle dcmtk binaries to GUI
