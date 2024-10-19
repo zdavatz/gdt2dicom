@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use std::default::Default;
 use std::ops::Deref;
 use std::path::PathBuf;
