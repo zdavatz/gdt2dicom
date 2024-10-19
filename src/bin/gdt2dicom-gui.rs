@@ -176,7 +176,9 @@ fn main() -> glib::ExitCode {
 
 fn check_dcmtk_binaries(window: &ApplicationWindow, app: &Application) {
     let mut missing_binaries: Vec<String> = Vec::new();
-    let binaries = vec!["xml2dcm", "dcmodify", "dcmdump", "dump2dcm"];
+    let binaries = vec![
+        "xml2dcm", "dcmodify", "dcmdump", "dump2dcm", "storescp", "dcmj2pnm",
+    ];
     for b in binaries {
         let p = PathBuf::from(b);
         if !check_if_binary_exists(&p) {
