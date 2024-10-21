@@ -13,6 +13,7 @@ use crate::dcm_xml::{
     xml_get_patient_patient_id, xml_get_patient_sex, xml_get_patient_weight_kg, xml_get_study_date,
     xml_get_study_time,
 };
+use crate::error::{G2DError, GdtError};
 
 #[derive(Debug, Default)]
 pub struct GdtFile {
@@ -127,38 +128,9 @@ pub struct RawGdtLine {
     content: String,
 }
 
-#[derive(Debug)]
-pub enum GdtError {
-    IoError(std::io::Error),
-    FieldIdentifierNotNumber(String, std::num::ParseIntError),
-    LineTooShort(String),
-    LineNotFound(String),
-    NumberExpected(String, std::num::ParseIntError),
-    InvalidValue(String, String),
-}
-
-impl From<std::io::Error> for GdtError {
-    fn from(error: std::io::Error) -> Self {
-        GdtError::IoError(error)
-    }
-}
-
-impl std::fmt::Display for GdtError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GdtError::IoError(io_err) => {
-                write!(f, "{}", io_err.to_string())
-            }
-            _ => {
-                write!(f, "{:?}", self)
-            }
-        }
-    }
-}
-
 pub fn parse_file_lines<P>(
     path: P,
-) -> Result<impl std::iter::Iterator<Item = Result<RawGdtLine, GdtError>>, GdtError>
+) -> Result<impl std::iter::Iterator<Item = Result<RawGdtLine, G2DError>>, G2DError>
 where
     P: AsRef<Path>,
 {
@@ -167,14 +139,14 @@ where
 
     return Ok(reader.lines().map(|r_str| {
         r_str
-            .map_err(GdtError::IoError)
+            .map_err(G2DError::IoError)
             .and_then(string_to_gdt_line)
     }));
 }
 
-fn string_to_gdt_line(str: String) -> Result<RawGdtLine, GdtError> {
+fn string_to_gdt_line(str: String) -> Result<RawGdtLine, G2DError> {
     if str.len() < 7 {
-        return Err(GdtError::LineTooShort(str));
+        return Err(G2DError::GdtError(GdtError::LineTooShort(str)));
     }
     let field_id = u32::from_str(&str[3..7])
         .map_err(|e| GdtError::FieldIdentifierNotNumber(String::from(&str), e))?;
@@ -185,7 +157,7 @@ fn string_to_gdt_line(str: String) -> Result<RawGdtLine, GdtError> {
     });
 }
 
-pub fn parse_file<P>(path: P) -> Result<GdtFile, GdtError>
+pub fn parse_file<P>(path: P) -> Result<GdtFile, G2DError>
 where
     P: AsRef<Path>,
 {
@@ -231,29 +203,29 @@ where
     return Ok(file);
 }
 
-type GdtLineIter<'a> = dyn 'a + std::iter::Iterator<Item = Result<RawGdtLine, GdtError>>;
+type GdtLineIter<'a> = dyn 'a + std::iter::Iterator<Item = Result<RawGdtLine, G2DError>>;
 
-fn read_record_header(file: &mut GdtFile, iter: &mut GdtLineIter) -> Result<(), GdtError> {
+fn read_record_header(file: &mut GdtFile, iter: &mut GdtLineIter) -> Result<(), G2DError> {
     let first_line = iter
         .next()
-        .ok_or_else(|| GdtError::LineNotFound("0".to_string()))
+        .ok_or_else(|| G2DError::GdtError(GdtError::LineNotFound("0".to_string())))
         .and_then(|x| x)?;
     let first_line_content = u32::from_str(&first_line.content)
         .map_err(|e| GdtError::NumberExpected(first_line.content, e))?;
 
     let second_line = iter
         .next()
-        .ok_or_else(|| GdtError::LineNotFound("1".to_string()))
+        .ok_or_else(|| G2DError::GdtError(GdtError::LineNotFound("1".to_string())))
         .and_then(|x| x)?;
     let second_line_content = u32::from_str(&second_line.content)
-        .map_err(|e| GdtError::NumberExpected(second_line.content, e))?;
+        .map_err(|e| G2DError::GdtError(GdtError::NumberExpected(second_line.content, e)))?;
 
     file.record_type = first_line_content;
     file.record_length = second_line_content;
     return Ok(());
 }
 
-fn read_request_object(iter: &mut GdtLineIter) -> Result<GdtRequestObject, GdtError> {
+fn read_request_object(iter: &mut GdtLineIter) -> Result<GdtRequestObject, G2DError> {
     let mut obj: GdtRequestObject = Default::default();
     while let Some(r_next_line) = iter.next() {
         match r_next_line {
@@ -294,7 +266,7 @@ fn read_request_object(iter: &mut GdtLineIter) -> Result<GdtRequestObject, GdtEr
     return Ok(obj);
 }
 
-fn read_header_data_object(iter: &mut GdtLineIter) -> Result<GdtHeaderDataObject, GdtError> {
+fn read_header_data_object(iter: &mut GdtLineIter) -> Result<GdtHeaderDataObject, G2DError> {
     let mut obj: GdtHeaderDataObject = Default::default();
     while let Some(r_next_line) = iter.next() {
         match r_next_line {
@@ -329,7 +301,7 @@ fn read_header_data_object(iter: &mut GdtLineIter) -> Result<GdtHeaderDataObject
     return Ok(obj);
 }
 
-fn read_patient_object(iter: &mut GdtLineIter) -> Result<GdtPatientObject, GdtError> {
+fn read_patient_object(iter: &mut GdtLineIter) -> Result<GdtPatientObject, G2DError> {
     let mut obj: GdtPatientObject = Default::default();
     while let Some(r_next_line) = iter.next() {
         match r_next_line {
@@ -409,7 +381,10 @@ fn read_patient_object(iter: &mut GdtLineIter) -> Result<GdtPatientObject, GdtEr
                 } else if content == "2" {
                     obj.patient_gender = GdtPatientGender::Female;
                 } else {
-                    return Err(GdtError::InvalidValue("Gender".to_string(), content));
+                    return Err(G2DError::GdtError(GdtError::InvalidValue(
+                        "Gender".to_string(),
+                        content,
+                    )));
                 }
             }
             Ok(RawGdtLine {
@@ -426,7 +401,7 @@ fn read_patient_object(iter: &mut GdtLineIter) -> Result<GdtPatientObject, GdtEr
 
 fn read_basic_diagnostics_object(
     iter: &mut GdtLineIter,
-) -> Result<GdtBasicDiagnosticsObject, GdtError> {
+) -> Result<GdtBasicDiagnosticsObject, G2DError> {
     let mut obj: GdtBasicDiagnosticsObject = Default::default();
     while let Some(r_next_line) = iter.next() {
         match r_next_line {

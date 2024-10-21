@@ -16,6 +16,9 @@ icon = [
     "Assets.xcassets/AppIcon.appiconset/512-mac.png"
 ]
 
+[features]
+gui = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -62,3 +65,4 @@ bench = false
 name = "gdt2dicom-gui"
 test = false
 bench = false
+required-features = ["gui"]

@@ -1,4 +1,3 @@
-use std::convert::From;
 use std::fs::File;
 use std::path::PathBuf;
 use xml::attribute::OwnedAttribute;
@@ -7,32 +6,8 @@ use xml::reader::EventReader;
 use xml::reader::XmlEvent;
 use xml::writer::EventWriter;
 
+use crate::error::G2DError;
 use crate::gdt::{GdtFile, GdtPatientGender};
-
-#[derive(Debug)]
-pub enum OppError {
-    IoError(std::io::Error),
-    XmlReaderError(xml::reader::Error),
-    XmlWriterError(xml::writer::Error),
-}
-
-impl From<std::io::Error> for OppError {
-    fn from(error: std::io::Error) -> Self {
-        OppError::IoError(error)
-    }
-}
-
-impl From<xml::reader::Error> for OppError {
-    fn from(error: xml::reader::Error) -> Self {
-        OppError::XmlReaderError(error)
-    }
-}
-
-impl From<xml::writer::Error> for OppError {
-    fn from(error: xml::writer::Error) -> Self {
-        OppError::XmlWriterError(error)
-    }
-}
 
 pub fn default_xml_str() -> String {
     let xml = format!(
@@ -121,7 +96,7 @@ pub fn insert_patient_to_xml(file: GdtFile, events: &mut Vec<XmlEvent>) {
     events.insert(end_index + 1, end);
 }
 
-pub fn file_to_xml(file: GdtFile, output: PathBuf) -> Result<File, OppError> {
+pub fn file_to_xml(file: GdtFile, output: PathBuf) -> Result<File, G2DError> {
     let xml_str = default_xml_str();
     let reader = EventReader::new(xml_str.as_bytes());
     let mut events: Vec<XmlEvent> = reader

@@ -10,6 +10,12 @@ use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[derive(Debug)]
+pub enum ChildOutput {
+    Log(String),
+    Exit(std::process::ExitStatus),
+}
+
 #[cfg(target_os = "linux")]
 pub fn binary_to_path(binary_name: String) -> PathBuf {
     return PathBuf::from(binary_name);
