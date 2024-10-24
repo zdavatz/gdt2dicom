@@ -13,7 +13,7 @@ use gtk::{
 };
 
 use crate::command::{binary_to_path, new_command, ChildOutput};
-use crate::dicom_jpeg_extraction::extract_jpeg_from_dicom;
+use crate::dcm_xml::{export_images_from_dcm_with_patient_id, DCMImageFormat};
 use crate::gui::runtime;
 use crate::gui::state::CStoreServerState;
 
@@ -368,10 +368,11 @@ pub fn setup_cstore_server(
                                     &saved_dicom_file
                                 )));
                                 if let Some(ref j) = jpeg_dir_path {
-                                    let extract_result = extract_jpeg_from_dicom(
+                                    let extract_result = export_images_from_dcm_with_patient_id(
                                         &PathBuf::from(saved_dicom_file),
                                         j,
-                                        &err_sender,
+                                        DCMImageFormat::Jpeg,
+                                        Some(&err_sender),
                                     );
                                     if let Err(err) = extract_result {
                                         _ = err_sender.send(ChildOutput::Log(format!(

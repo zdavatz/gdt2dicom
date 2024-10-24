@@ -9,7 +9,7 @@ use gdt2dicom::command::check_if_binary_exists;
 use gtk::gio::{ActionEntry, Menu};
 use gtk::glib::clone;
 use gtk::prelude::*;
-use gtk::{glib, AlertDialog, Application, ApplicationWindow, Grid, Separator};
+use gtk::{glib, AlertDialog, Application, ApplicationWindow, Grid, ScrolledWindow, Separator};
 
 use gdt2dicom::gui::about_dialog::open_about_dialog;
 use gdt2dicom::gui::auto_convert_list::setup_auto_convert_list_ui;
@@ -39,8 +39,8 @@ fn main() -> glib::ExitCode {
         let window = ApplicationWindow::builder()
             .application(app)
             .title("gdt2dicom")
-            .default_width(350)
-            .default_height(70)
+            .default_width(500)
+            .default_height(800)
             .show_menubar(true)
             .build();
 
@@ -60,6 +60,12 @@ fn main() -> glib::ExitCode {
             .build();
         window.add_action_entries([action_about, action_copyright]);
 
+        let main_scroll_window = ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .height_request(550)
+            .build();
+
         let grid_layout = Grid::builder()
             .column_spacing(12)
             .row_spacing(12)
@@ -68,6 +74,7 @@ fn main() -> glib::ExitCode {
             .margin_start(12)
             .margin_end(12)
             .build();
+        main_scroll_window.set_child(Some(&grid_layout));
 
         let saved_state = read_saved_states().unwrap_or_else(|err| {
             println!("Error while restoring state: {:?}", err);
@@ -112,18 +119,18 @@ fn main() -> glib::ExitCode {
             y,
             worklist_dir_arc.clone(),
         );
-        let (y, convert_list_state_receiver) = setup_auto_convert_list_ui(
+        let (y, cstore_server_state_receiver) = setup_cstore_server(
+            &cstore_server_state,
+            &window.clone(),
+            &grid_layout.clone(),
+            y,
+        );
+        let (_y, convert_list_state_receiver) = setup_auto_convert_list_ui(
             &saved_state.conversions,
             &window.clone(),
             &grid_layout.clone(),
             y,
             worklist_dir_arc.clone(),
-        );
-        let (_y, cstore_server_state_receiver) = setup_cstore_server(
-            &cstore_server_state,
-            &window.clone(),
-            &grid_layout.clone(),
-            y,
         );
 
         let state_arc1 = state_arc.clone();
@@ -165,7 +172,7 @@ fn main() -> glib::ExitCode {
             }
         });
 
-        window.set_child(Some(&grid_layout));
+        window.set_child(Some(&main_scroll_window));
         window.present();
 
         if cfg!(target_os = "linux") {

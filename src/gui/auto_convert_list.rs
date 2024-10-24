@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use gtk::glib::{clone, spawn_future_local};
 use gtk::prelude::*;
-use gtk::{glib, ApplicationWindow, Button, Frame, Grid, ScrolledWindow};
+use gtk::{glib, ApplicationWindow, Button, Frame, Grid};
 
 use crate::gui::auto_convert::setup_auto_convert_ui;
 use crate::gui::state::WorklistConversionsState;
@@ -20,15 +20,9 @@ pub fn setup_auto_convert_list_ui(
     let (state_sender, state_receiver) = mpsc::channel();
     let worklist_conversions: Arc<Mutex<Vec<Arc<Mutex<WorklistConversion>>>>> =
         Arc::new(Mutex::new(vec![]));
-    let conversion_scroll_window = ScrolledWindow::builder()
-        .hexpand(true)
-        .vexpand(true)
-        .height_request(300)
-        .build();
-    grid.attach(&conversion_scroll_window, 0, grid_y_index, 4, 1);
 
     let box1 = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    conversion_scroll_window.set_child(Some(&box1));
+    grid.attach(&box1, 0, grid_y_index, 4, 1);
 
     let on_updated = clone!(
         #[weak]
