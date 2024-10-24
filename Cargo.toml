@@ -39,6 +39,7 @@ tokio = { version = "1", features = ["io-util", "process", "rt-multi-thread"] }
 serde_json = "1.0"
 serde =  { version = "1.0.210", features = ["derive"] }
 shared_child = "1.0.1"
+regex = "1.11.0"
 
 
 [[bin]]

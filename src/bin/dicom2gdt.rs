@@ -3,7 +3,9 @@ use clap::Parser;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
-use gdt2dicom::dcm_xml::{export_images_from_dcm, parse_dcm_as_xml};
+use gdt2dicom::dcm_xml::{
+    export_images_from_dcm_with_patient_id, parse_dcm_as_xml, DCMImageFormat,
+};
 use gdt2dicom::gdt::{dcm_xml_to_file, file_to_string};
 
 /// Convert a gdt file and an image folder to a dicom file
@@ -41,10 +43,14 @@ fn main() -> Result<(), std::io::Error> {
                 pngs_path.display()
             )
         } else {
-            let mut png_with_prefix = pngs_path.clone();
-            png_with_prefix.push(file.object_patient.patient_number.clone());
-            println!("Exporting images to {}", &png_with_prefix.display());
-            export_images_from_dcm(&args.dicom_file, &png_with_prefix).unwrap();
+            println!("Exporting images to {}", &pngs_path.display());
+            export_images_from_dcm_with_patient_id(
+                &args.dicom_file,
+                &pngs_path,
+                DCMImageFormat::Png,
+                None,
+            )
+            .unwrap();
             println!("Exported images");
         }
     }

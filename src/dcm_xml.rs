@@ -1,12 +1,14 @@
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Error, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
+use std::sync::mpsc;
 use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use tempfile::NamedTempFile;
 use xml::attribute::OwnedAttribute;
 use xml::name::OwnedName;
@@ -14,7 +16,7 @@ use xml::reader::EventReader;
 use xml::reader::XmlEvent;
 use xml::writer::EventWriter;
 
-use crate::command::exec_command;
+use crate::command::{exec_command, ChildOutput};
 use crate::error::G2DError;
 use crate::gdt::{GdtBasicDiagnosticsObject, GdtFile, GdtPatientGender, GdtPatientObject};
 
@@ -38,19 +40,77 @@ pub fn parse_dcm_as_xml(path: &PathBuf) -> Result<Vec<XmlEvent>, G2DError> {
     return Ok(events);
 }
 
-pub fn export_images_from_dcm(dcm_path: &PathBuf, output_path: &PathBuf) -> Result<(), G2DError> {
-    exec_command(
+#[derive(Debug)]
+pub enum DCMImageFormat {
+    Jpeg,
+    Png,
+}
+
+pub fn export_images_from_dcm_with_patient_id(
+    dcm_path: &PathBuf,
+    output_path: &PathBuf,
+    format: DCMImageFormat,
+    log_sender: Option<&mpsc::Sender<ChildOutput>>,
+) -> Result<Vec<String>, G2DError> {
+    let dcm_xml_events = parse_dcm_as_xml(&dcm_path)?;
+    let patient_id = xml_get_patient_patient_id(&dcm_xml_events);
+    let patient_id = match patient_id {
+        Some(id) => id,
+        None => {
+            if let Some(l) = log_sender {
+                _ = l.send(ChildOutput::Log(
+                    "Cannot patient id from Dicom file".to_string(),
+                ));
+            }
+            let custom_error =
+                Error::new(ErrorKind::Other, "Cannot find patient id from Dicom file");
+            return Err(G2DError::IoError(custom_error));
+        }
+    };
+    let mut output_path = output_path.clone();
+    output_path.push("_gdt2dicom_temp_");
+    let saved_files = export_images_from_dcm(dcm_path, &output_path, format, log_sender)?;
+    for saved_file in &saved_files {
+        let new_name = saved_file.replace("_gdt2dicom_temp_.", &format!("{}_", patient_id));
+        std::fs::rename(saved_file, new_name)?;
+    }
+    return Ok(saved_files);
+}
+
+pub fn export_images_from_dcm(
+    dcm_path: &PathBuf,
+    output_path: &PathBuf,
+    format: DCMImageFormat,
+    log_sender: Option<&mpsc::Sender<ChildOutput>>,
+) -> Result<Vec<String>, G2DError> {
+    let output = exec_command(
         "dcmj2pnm",
         vec![
-            OsStr::new("--write-png"),
+            match format {
+                DCMImageFormat::Png => OsStr::new("--write-png"),
+                DCMImageFormat::Jpeg => OsStr::new("--write-jpeg"),
+            },
             dcm_path.as_os_str(),
             output_path.as_os_str(),
             OsStr::new("--all-frames"),
+            OsStr::new("--verbose"),
         ],
-        true,
+        false,
         None,
     )?;
-    return Ok(());
+    let err_str = std::str::from_utf8(&output.stderr).unwrap();
+    let mut output_filenames = vec![];
+    if output.status.success() {
+        let re = Regex::new(r"I: writing frame [0-9]+ to (.*)").unwrap();
+        for (_, [x]) in re.captures_iter(err_str).map(|c| c.extract()) {
+            output_filenames.push(x.to_string());
+        }
+    } else {
+        if let Some(l) = log_sender {
+            _ = l.send(ChildOutput::Log(format!("Error: {:?}", err_str)));
+        }
+    }
+    return Ok(output_filenames);
 }
 
 pub fn xml_events_to_file(events: Vec<XmlEvent>) -> Result<NamedTempFile, G2DError> {
