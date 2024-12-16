@@ -11,7 +11,7 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 
 use crate::command::{exec_command, exec_command_with_env};
-use crate::dcm_worklist::{dcm_to_worklist, dcm_xml_to_worklist};
+use crate::dcm_worklist::dcm_to_worklist;
 use crate::dcm_xml::{default_dcm_xml, file_to_xml, DcmTransferType};
 use crate::error::G2DError;
 use crate::gdt::parse_file;
@@ -272,13 +272,8 @@ fn convert_gdt_file(
     let temp_file = file_to_xml(gdt_file, &xml_events)?;
     let path = temp_file.path();
 
-    if aetitle.is_some() || modality.is_some() {
-        let dcm_file = modify_dcm_file(log_sender, aetitle, modality, &path)?;
-        dcm_to_worklist(log_sender, &dcm_file.path(), &output_path)?;
-    } else {
-        println!("temp_file {:?}", &path);
-        dcm_xml_to_worklist(log_sender, &path, &output_path)?;
-    }
+    let dcm_file = modify_dcm_file(log_sender, aetitle, modality, &path)?;
+    dcm_to_worklist(log_sender, &dcm_file.path(), &output_path)?;
 
     return Ok(filename);
 }
@@ -337,8 +332,24 @@ fn modify_dcm_file(
         vec![]
     };
 
+    let output2 = exec_command_with_env(
+        "dcmodify",
+        vec![OsStr::new("--gen-stud-uid"), temp_dcm_file_path.as_os_str()],
+        true,
+        log_sender,
+        envs.clone(),
+    )?;
+    if !output2.status.success() {
+        let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+        if let Some(log_sender) = log_sender {
+            _ = log_sender.send(err_str.to_string());
+        }
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(G2DError::IoError(custom_error));
+    }
+
     if let Some(aetitle) = aetitle {
-        let output2 = exec_command_with_env(
+        let output3 = exec_command_with_env(
             "dcmodify",
             vec![
                 OsStr::new("-i"),
@@ -349,8 +360,8 @@ fn modify_dcm_file(
             log_sender,
             envs.clone(),
         )?;
-        if !output2.status.success() {
-            let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+        if !output3.status.success() {
+            let err_str = std::str::from_utf8(&output3.stderr).unwrap();
             if let Some(log_sender) = log_sender {
                 _ = log_sender.send(err_str.to_string());
             }
@@ -360,7 +371,7 @@ fn modify_dcm_file(
     }
 
     if let Some(modality) = modality {
-        let output3 = exec_command_with_env(
+        let output4 = exec_command_with_env(
             "dcmodify",
             vec![
                 OsStr::new("-i"),
@@ -371,8 +382,8 @@ fn modify_dcm_file(
             log_sender,
             envs,
         )?;
-        if !output3.status.success() {
-            let err_str = std::str::from_utf8(&output3.stderr).unwrap();
+        if !output4.status.success() {
+            let err_str = std::str::from_utf8(&output4.stderr).unwrap();
             if let Some(log_sender) = log_sender {
                 _ = log_sender.send(err_str.to_string());
             }
