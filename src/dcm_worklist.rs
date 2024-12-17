@@ -81,5 +81,21 @@ pub fn dcm_xml_to_worklist(
         return Err(custom_error);
     }
 
+    // Always assign new study id #72
+    let output2 = exec_command(
+        "dcmodify",
+        vec![OsStr::new("--gen-stud-uid"), temp_dcm_file_path.as_os_str()],
+        true,
+        log_sender,
+    )?;
+    if !output2.status.success() {
+        let err_str = std::str::from_utf8(&output2.stderr).unwrap();
+        if let Some(log_sender) = log_sender {
+            _ = log_sender.send(err_str.to_string());
+        }
+        let custom_error = Error::new(ErrorKind::Other, err_str);
+        return Err(custom_error);
+    }
+
     return dcm_to_worklist(log_sender, temp_dcm_file_path, output_path);
 }

@@ -332,6 +332,7 @@ fn modify_dcm_file(
         vec![]
     };
 
+    // Always assign new study id #72
     let output2 = exec_command_with_env(
         "dcmodify",
         vec![OsStr::new("--gen-stud-uid"), temp_dcm_file_path.as_os_str()],
