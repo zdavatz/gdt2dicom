@@ -1,12 +1,14 @@
 use std::default::Default;
 use std::path::PathBuf;
 
+use crate::folder_flatten::FolderFlattenState;
 use crate::worklist_conversion::WorklistConversionState;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 pub type WorklistConversionsState = Vec<WorklistConversionState>;
+pub type FolderFlattensState = Vec<FolderFlattenState>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StateFile {
@@ -15,6 +17,7 @@ pub struct StateFile {
     // Option for backward compatibility
     pub dicom_server: Option<DicomServerState>,
     pub cstore_server: Option<CStoreServerState>,
+    pub flattens: Option<FolderFlattensState>,
 }
 
 impl Default for StateFile {
@@ -24,6 +27,7 @@ impl Default for StateFile {
             conversions: Vec::new(),
             dicom_server: Some(DicomServerState::default()),
             cstore_server: Some(CStoreServerState::default()),
+            flattens: Some(Vec::new()),
         }
     }
 }

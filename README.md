@@ -21,8 +21,9 @@ and `gdt2vdds`.
 ### GUI
 
 There is also a GTK4 GUI app that watches folders and auto-converts incoming GDT
-files to worklist files, serves the worklist folder with dcmtk's `wlmscpfs`, and
-receives images via C-STORE (`storescp`), converting them back to JPEG + GDT.
+files to worklist files, serves the worklist folder with dcmtk's `wlmscpfs`,
+receives images via C-STORE (`storescp`) converting them back to JPEG + GDT, and
+flattens device export folders (see below).
 
 * Install GTK4: `brew install gtk4` (macOS) or `apt install libgtk-4-dev` (Linux)
 
@@ -77,6 +78,29 @@ Sends the patient from a GDT file to a dental imaging program (BVS) registered i
 ```
 ./target/debug/gdt2vdds --gdt-file <GDT FILE> --output <IMAGE OUTPUT FOLDER> [--ext JPG|TIF|PNG|DCM] [--bvs <BVS NAME>] [--vdds-mmi <PATH TO VDDS_MMI.ini>]
 ```
+
+### Flatten folder (GUI)
+
+Some practice softwares watch a single folder for new files and cannot descend
+into subfolders, while imaging devices export one subfolder per exam — so the
+images are never picked up. The **Flatten folder** section of the GUI closes that
+gap: it watches an export folder recursively and copies new files up into the flat
+folder the practice software reads.
+
+- **Export Folder** — where the device writes, e.g. `…\Import\xray\ExternalSave`
+  with one `<YYYYMMDD_HHMMSS_PatId_Name>` subfolder per exam.
+- **Flat Folder** — the folder the practice software actually watches.
+- **Extensions** — comma separated, e.g. `jpg,dcm`. Empty copies every file.
+- **Only since** — `YYYYMMDD`. Exam folders whose name starts with an earlier date
+  are skipped, so switching this on does not upload years of old studies at once.
+- **Exclude** — comma separated substrings matched against the file and its exam
+  folder, e.g. `EM-,Muster` to skip emergency exams without a patient ID and test
+  patients.
+
+Filenames are copied unchanged (they usually carry the patient ID). Files are
+written as `.gdt2dicom_tmp_…` and renamed into place, so a watcher never sees a
+half-written file. Files already present in the flat folder, or already moved on
+into its `processed` subfolder by the receiving software, are not copied again.
 
 ## Releases
 

@@ -16,6 +16,7 @@ use gdt2dicom::gui::auto_convert_list::setup_auto_convert_list_ui;
 use gdt2dicom::gui::copyright_dialog::open_copyright_dialog;
 use gdt2dicom::gui::cstore_server::setup_cstore_server;
 use gdt2dicom::gui::dicom_server::setup_dicom_server;
+use gdt2dicom::gui::flatten_list::setup_flatten_list_ui;
 use gdt2dicom::gui::runtime;
 use gdt2dicom::gui::state::{
     read_saved_states, write_state_to_file, CStoreServerState, DicomServerState, StateFile,
@@ -125,12 +126,18 @@ fn main() -> glib::ExitCode {
             &grid_layout.clone(),
             y,
         );
-        let (_y, convert_list_state_receiver) = setup_auto_convert_list_ui(
+        let (y, convert_list_state_receiver) = setup_auto_convert_list_ui(
             &saved_state.conversions,
             &window.clone(),
             &grid_layout.clone(),
             y,
             worklist_dir_arc.clone(),
+        );
+        let (_y, flatten_list_state_receiver) = setup_flatten_list_ui(
+            &saved_state.flattens.clone().unwrap_or_default(),
+            &window.clone(),
+            &grid_layout.clone(),
+            y,
         );
 
         let state_arc1 = state_arc.clone();
@@ -152,6 +159,19 @@ fn main() -> glib::ExitCode {
                 let mut state = state_arc1.lock().unwrap();
                 let new_state = StateFile {
                     conversions: convert_list_state,
+                    ..state.deref().clone()
+                };
+                _ = write_state_to_file(&new_state);
+                *state = new_state;
+            }
+        });
+
+        let state_arc1 = state_arc.clone();
+        runtime().spawn(async move {
+            while let Ok(flatten_list_state) = flatten_list_state_receiver.recv() {
+                let mut state = state_arc1.lock().unwrap();
+                let new_state = StateFile {
+                    flattens: Some(flatten_list_state),
                     ..state.deref().clone()
                 };
                 _ = write_state_to_file(&new_state);

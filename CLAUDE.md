@@ -72,13 +72,32 @@ shared worklist folder, and moves processed files into a `processed/` subfolder.
 `Arc<Mutex<…>>`-shared with the filesystem-event handler and serializes to
 `WorklistConversionState` for persistence.
 
+`src/folder_flatten.rs` is the same pattern for the image return path and involves no
+dcmtk at all — it exists because practice softwares (e.g. VitaByte E-PAT) watch a single
+folder and cannot descend into subfolders, while imaging devices export one subfolder per
+exam. It watches `RecursiveMode::Recursive` (unlike `worklist_conversion.rs`) and copies
+matching files up into a flat folder, filtered by extension, a `YYYYMMDD` cutoff parsed
+from the exam folder name, and exclude substrings. Copies go to a `.gdt2dicom_tmp_` name
+first and are renamed into place, because the receiving watcher must not see a partially
+written file; dotfiles are skipped for the same reason. Re-scans are idempotent: a file
+already in the target folder or in its `processed/` subfolder (where the receiving
+software moves what it has consumed) is never copied twice.
+
 The GUI (`src/bin/gdt2dicom-gui.rs` + `src/gui/`) is one window composed of sections:
 a list of auto-convert folder watchers (`auto_convert_list.rs`/`auto_convert.rs`), a
 worklist DICOM server section that runs dcmtk's `wlmscpfs` serving the worklist folder
-(`dicom_server.rs`), and a C-STORE receiver running `storescp` that converts incoming
-DICOMs to JPEG + GDT (`cstore_server.rs`). All UI state is persisted as `state.json`
+(`dicom_server.rs`), a C-STORE receiver running `storescp` that converts incoming DICOMs
+to JPEG + GDT (`cstore_server.rs`), and a list of folder-flatten watchers
+(`flatten_list.rs`/`flatten.rs`). All UI state is persisted as `state.json`
 **next to the executable** (`src/gui/state.rs`) — fields added to `StateFile` must be
-`Option` for backward compatibility with existing users' files.
+`Option` for backward compatibility with existing users' files (`flattens` is the most
+recent example).
+
+The two list-style sections follow the same shape and are the template to copy for a new
+one: `*_list.rs` owns an `Arc<Mutex<Vec<Arc<Mutex<Engine>>>>>`, hands each entry an
+`on_updated` callback that re-serializes every entry, and returns an
+`mpsc::Receiver<Vec<State>>` that `bin/gdt2dicom-gui.rs` drains in a `runtime().spawn`
+to write `state.json`. Each section takes `grid_y_index` and returns the next free row.
 
 Non-ASCII handling: GDT parsing/writing works on raw bytes/UTF-8, but VDDS INI files
 use the OS-local ANSI encoding (`local-encoding-ng`/`encoding` crates in `src/vdds.rs`).
