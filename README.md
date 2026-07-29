@@ -1,17 +1,36 @@
 # gdt2dicom
-Convert a gdt file and an image folder to a dicom file
 
+Convert between GDT files (the German „Gerätedatentransfer" practice-management
+exchange format) and DICOM files / DICOM worklists. Can also export to VDDS-media
+(dental imaging) and Open Practice Protocol (OPP) XML.
 
 ## Build
 
-* Install `dcmtk`, that will give you `img2dcm`
+* Install [dcmtk](https://dicom.offis.de/dcmtk/) — all DICOM work is delegated to
+  its command line tools (`img2dcm`, `xml2dcm`, `dcmdump`, `dump2dcm`, `dcmodify`, …),
+  so they must be available at runtime. On macOS: `brew install dcmtk`.
 * Install Rust: https://www.rust-lang.org/tools/install
 
 ```
 cargo build
 ```
 
-The binary should be built at `./target/debug/gdt2dicom` and `./target/debug/dicom2gdt`
+The binaries are built at `./target/debug/`: `gdt2dicom`, `dicom2gdt`, `gdt2opp`
+and `gdt2vdds`.
+
+### GUI
+
+There is also a GTK4 GUI app that watches folders and auto-converts incoming GDT
+files to worklist files, serves the worklist folder with dcmtk's `wlmscpfs`, and
+receives images via C-STORE (`storescp`), converting them back to JPEG + GDT.
+
+* Install GTK4: `brew install gtk4` (macOS) or `apt install libgtk-4-dev` (Linux)
+
+```
+cargo build --bin gdt2dicom-gui --features=gui
+```
+
+## Usage
 
 ### GDT to Dicom
 
@@ -37,14 +56,30 @@ You can convert Dicom 2 GDT as well.
 
 ### GDT zu Worklist file
 
-You can convert a GDT file to a Worklist file doing
+You can convert a GDT file to a Worklist file. The mode is selected by the output
+extension: `.wl` produces a worklist instead of a Dicom file.
 
 ```
-gdt2dicom --gdt-file epat.gdt --output epat.wl
+./target/debug/gdt2dicom --gdt-file epat.gdt --output epat.wl
 ```
 
 ### GDT to Open Practice Protocol
 
 ```
-./target/debug/gdt2opp --gdt-file <DCM FILE> --output opp.xml
+./target/debug/gdt2opp --gdt-file <GDT FILE> --output opp.xml
 ```
+
+### GDT to VDDS
+
+Sends the patient from a GDT file to a dental imaging program (BVS) registered in
+`VDDS_MMI.ini`, and saves the images it returns into the output folder.
+
+```
+./target/debug/gdt2vdds --gdt-file <GDT FILE> --output <IMAGE OUTPUT FOLDER> [--ext JPG|TIF|PNG|DCM] [--bvs <BVS NAME>] [--vdds-mmi <PATH TO VDDS_MMI.ini>]
+```
+
+## Releases
+
+Pushing a git tag builds and publishes release artifacts for Linux, Windows and
+macOS via GitHub Actions (`.github/workflows/release.yml`). The Windows and macOS
+GUI bundles ship with the required dcmtk binaries included.
